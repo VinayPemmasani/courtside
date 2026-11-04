@@ -37,9 +37,15 @@ export async function loadStudioFonts() {
   await Promise.all([document.fonts.load(`400 100px ${DISPLAY}`), document.fonts.load(`700 30px ${MONO}`)]).catch(() => undefined);
 }
 
+/**
+ * Layer scale. Reels are 1080 wide and portrait; in a landscape preview, scaling by width alone
+ * made the headline taller than the frame, so the height caps it too (portrait reels are unchanged).
+ */
+export const studioScale = (W: number, H: number) => Math.min(W / 1080, H / 1500);
+
 export function drawHeadline(v: Surface, h: Headline) {
   const { ctx, W, H } = v;
-  const s = W / 1080;
+  const s = studioScale(W, H);
   const pad = 56 * s;
   const tone = h.tone === 'good' ? COLORS.accent : RED;
   ctx.save();
@@ -101,7 +107,7 @@ function drawDots(ctx: CanvasRenderingContext2D, right: number, y: number, s: nu
 /** Callout chips pinned to the 3D body: a leader from the joint (where the ring is) to the label. */
 export function drawPinnedLabels(v: Surface, scene: StudioScene, callouts: Callout[], hand: Handedness) {
   const { ctx, W, H } = v;
-  const s = W / 1080;
+  const s = studioScale(W, H);
   ctx.save();
   ctx.font = `700 ${30 * s}px Inter, system-ui, sans-serif`;
   ctx.textBaseline = 'middle';
@@ -135,7 +141,7 @@ export function drawPinnedLabels(v: Surface, scene: StudioScene, callouts: Callo
 export function drawWeightGauge(v: Surface, share: number | null) {
   if (share === null) return;
   const { ctx, W, H } = v;
-  const s = W / 1080;
+  const s = studioScale(W, H);
   const pad = 56 * s;
   const y = H - 170 * s;
   const barH = 18 * s;

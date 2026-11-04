@@ -391,7 +391,7 @@ export function SessionView({ id }: { id: string }) {
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
             />
-            {phaseHere && stroke && (
+            {phaseHere && stroke && !studio && (
               <div className="phase-badge"><span>{phaseHere.index}</span>{phaseHere.label}</div>
             )}
             {url && (

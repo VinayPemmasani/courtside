@@ -9,6 +9,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Mono:wght@400;700&display=swap">
 <link rel="icon" href="img/icon.svg">
+<meta property="og:title" content="Courtside: film the swing, see the fix">
+<meta property="og:description" content="The tennis coach's analysis studio you buy once and keep. Free trial: 5 analysed sessions.">
+<meta property="og:image" content="img/og-card.jpg">
 <style>
 /* Layout: a hard-court page. Light chalk-blue grounds with a deep court-blue band for the hero and the FAQ scoreboard; lime marks only what the app itself marks (contact, IN calls). */
 :root {
@@ -191,6 +194,34 @@ footer .brand { color: var(--ink); font-size: 20px; }
   .ballmark:nth-of-type(2) { animation-delay: .15s; } .ballmark:nth-of-type(3) { animation-delay: .3s; } .ballmark:nth-of-type(4) { animation-delay: .45s; }
   @keyframes land { 0% { transform: scale(1.8); } 60% { transform: scale(0.9); } 100% { transform: scale(1); } }
 }
+
+/* Licences */
+.mockups { width: 100%; border-radius: 18px; }
+.tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: stretch; }
+.tier { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 30px; display: flex; flex-direction: column; gap: 10px; }
+.tier h3 { font-size: 24px; font-weight: 700; }
+.tier .price { font-family: var(--display); font-size: 72px; line-height: 0.95; }
+.tier .per { color: var(--soft); font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+.tier ul { margin: 8px 0 18px; padding: 0; list-style: none; display: grid; gap: 8px; flex: 1; align-content: start; }
+.tier li { padding-left: 24px; position: relative; }
+.tier li::before { content: "✓"; position: absolute; left: 0; color: var(--court); font-weight: 700; }
+.tier .btn { justify-content: center; text-align: center; }
+.tier.best { background: var(--court-deep); color: var(--on-court); border-color: var(--court-deep); }
+.tier.best .per { color: var(--on-court-soft); }
+.tier.best li::before { color: var(--ball); }
+.tier.best .flag { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ball); }
+.trial { margin-top: 20px; background: var(--surface); border: 2px dashed var(--court); border-radius: 18px; padding: 26px 30px; display: flex; gap: 24px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.trial h3 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.trial p { color: var(--soft); }
+.trial .os, .tiers + .os { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.trial .os span { font-family: var(--mono); font-size: 12.5px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; }
+.fine { margin-top: 16px; color: var(--soft); font-size: 15px; }
+#checkout-note { display: block; margin-top: 8px; color: var(--ink); font-weight: 600; }
+#checkout-note[hidden] { display: none; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tier li::before { color: var(--ball); } :root:not([data-theme="light"]) .tier.best { background: var(--court); } }
+:root[data-theme="dark"] .tier li::before { color: var(--ball); }
+:root[data-theme="dark"] .tier.best { background: var(--court); }
+@media (max-width: 860px) { .tiers { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
@@ -205,7 +236,7 @@ footer .brand { color: var(--ink); font-size: 20px; }
       <a href="#features">Features</a>
       <a href="#line-calls">Line calls</a>
       <a href="#filming">How to film</a>
-      <a href="#price">Price</a>
+      <a href="#price">Pricing</a>
       <a href="#faq">FAQ</a>
     </nav>
     <a class="btn ball" href="#price">Get Courtside</a>
@@ -220,7 +251,7 @@ footer .brand { color: var(--ink); font-size: 20px; }
         <h1>Film the swing. <em>See the fix.</em></h1>
         <p class="lede">Courtside breaks down every forehand, backhand and serve from a phone video, calls your bounces in or out, and tells you the one thing to work on next.</p>
         <div class="ctas">
-          <a class="btn ball" href="#price">Download for desktop</a>
+          <a class="btn ball" href="#price">Try it free</a>
           <a class="btn ghost" href="#filming">How to film a session</a>
         </div>
         <p class="facts eyebrow"><span>Windows · macOS · Linux</span><span>Works offline</span><span>Video never leaves your computer</span></p>
@@ -373,28 +404,70 @@ footer .brand { color: var(--ink); font-size: 20px; }
     </div>
   </section>
 
+  <section id="devices" style="padding-bottom:0">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="eyebrow">One studio, every screen</p>
+        <h2>Analyse on the laptop. Send the reel to their phone.</h2>
+        <p>Courtside runs on your Windows, Mac or Linux computer. What it makes, the studio reels, image cards and PDF reports, opens anywhere your players are.</p>
+      </div>
+      <img class="mockups" src="img/mockups.jpg" alt="Courtside on a laptop showing shot placement, on a tablet showing the filming check, and on a phone playing a studio reel." width="1600" height="1000" loading="lazy">
+    </div>
+  </section>
+
   <section id="price">
     <div class="wrap">
       <div class="sec-head">
         <p class="eyebrow">Price and privacy</p>
-        <h2>Free during early access</h2>
-        <p>No account, no upload, no subscription. Courtside runs on your own computer.</p>
+        <h2>Buy it once. Keep it.</h2>
+        <p>No subscription, no account, no upload. Try every feature on 5 sessions for free, then pick a licence.</p>
       </div>
-      <div class="plan">
-        <div>
-          <p class="price">FREE<small>while in early access</small></p>
-          <p style="margin-top: 14px; color: var(--soft)">Install it on as many computers as you like. Coaches can keep every player they work with in one place.</p>
-          <div class="os"><span>Windows .msi</span><span>macOS .dmg</span><span>Linux .AppImage</span></div>
-          <p style="margin-top: 22px"><a class="btn ball" href="https://github.com/vinstarworld007/Tennis/releases">Download Courtside</a></p>
+      <div class="tiers">
+        <div class="tier">
+          <h3>Player</h3>
+          <p class="price">$49</p>
+          <p class="per">one-time</p>
+          <ul>
+            <li>One player profile</li>
+            <li>All stroke analysis and line calls</li>
+            <li>Reels, images, PDF and CSV exports</li>
+          </ul>
+          <a class="btn ghost" data-plan="player" href="#price">Buy Player</a>
         </div>
-        <ul>
-          <li>Unlimited players, sessions and exports</li>
-          <li>All analysis runs on your computer; videos are never uploaded</li>
-          <li>Works with no internet connection, on court or on the bus</li>
-          <li>Share with players by file: images, PDF, reels or a whole session</li>
-          <li>Export all of your numbers as CSV whenever you want</li>
-        </ul>
+        <div class="tier best">
+          <p class="flag">Most coaches pick this</p>
+          <h3>Coach</h3>
+          <p class="price">$149</p>
+          <p class="per">one-time</p>
+          <ul>
+            <li>Unlimited players and sessions</li>
+            <li>3D studio reels for every student</li>
+            <li>Shot placement, compare and progress charts</li>
+            <li>Share whole sessions by file</li>
+          </ul>
+          <a class="btn ball" data-plan="coach" href="#price">Buy Coach</a>
+        </div>
+        <div class="tier">
+          <h3>Academy</h3>
+          <p class="price">$490</p>
+          <p class="per">one-time · 5 coach seats</p>
+          <ul>
+            <li>Everything in Coach, for five coaches</li>
+            <li>Priority email support</li>
+            <li>Help setting up your filming station</li>
+          </ul>
+          <a class="btn ghost" data-plan="academy" href="#price">Buy Academy</a>
+        </div>
       </div>
+      <div class="trial">
+        <div>
+          <h3>Free trial: 5 analysed sessions</h3>
+          <p>Every feature unlocked. Videos are never uploaded and the app works with no internet connection.</p>
+          <div class="os"><span>Windows .msi</span><span>macOS .dmg</span><span>Linux .AppImage</span></div>
+        </div>
+        <a class="btn ball" href="https://github.com/vinstarworld007/Tennis/releases">Download the free trial</a>
+      </div>
+      <p class="fine">Each licence includes a year of updates; after that an optional $49 a year keeps them coming, and the version you have keeps working forever. 30-day money-back guarantee. <span id="checkout-note" hidden>Checkout opens soon: download the free trial today and we'll email you when licences go on sale.</span></p>
     </div>
   </section>
 
@@ -410,6 +483,7 @@ footer .brand { color: var(--ink); font-size: 20px; }
           <a href="#faq-start">Getting started</a>
           <a href="#faq-accuracy">Accuracy</a>
           <a href="#faq-calls">Line calls and speed</a>
+          <a href="#faq-buy">Buying and licences</a>
           <a href="#faq-share">Sharing and data</a>
           <a href="#faq-help">Troubleshooting</a>
         </nav>
@@ -497,6 +571,25 @@ footer .brand { color: var(--ink); font-size: 20px; }
             </details>
           </div>
 
+          <div class="faq-group" id="faq-buy">
+            <h3>Buying and licences</h3>
+            <details>
+              <summary>What does the free trial include?</summary>
+              <div class="answer"><p>Every feature, for your first 5 analysed sessions. No card and no account. When you buy, enter your licence key in the app and everything you made in the trial stays.</p></div>
+            </details>
+            <details>
+              <summary>Is it a subscription?</summary>
+              <div class="answer"><p>No. You pay once and keep the version you bought. A year of updates is included; after that you can renew updates for $49 a year, or not, and the app keeps working either way.</p></div>
+            </details>
+            <details>
+              <summary>Can I use one licence on my laptop and my desktop?</summary>
+              <div class="answer"><p>Yes. Each licence covers one person on up to two of their own computers. Academy covers five coaches.</p></div>
+            </details>
+            <details>
+              <summary>Can I get a refund?</summary>
+              <div class="answer"><p>Yes, within 30 days of purchase, no questions asked.</p></div>
+            </details>
+          </div>
           <div class="faq-group" id="faq-share">
             <h3>Sharing and data</h3>
             <details>
@@ -513,7 +606,7 @@ footer .brand { color: var(--ink); font-size: 20px; }
             </details>
             <details>
               <summary>Can I use Courtside on more than one computer?</summary>
-              <div class="answer"><p>Yes, install it wherever you like. To move a session between computers, use <strong>Share session</strong> and open the file on the other one.</p></div>
+              <div class="answer"><p>Yes. A licence covers you on two of your own computers, and the free trial installs anywhere. To move a session between computers, use <strong>Share session</strong> and open the file on the other one.</p></div>
             </details>
           </div>
 
@@ -553,5 +646,14 @@ footer .brand { color: var(--ink); font-size: 20px; }
     <span style="margin-left: auto">Pose model: MediaPipe Pose (Apache 2.0)</span>
   </div>
 </footer>
+<script>
+/* Checkout links: paste each plan's store checkout URL (Lemon Squeezy or Paddle) here. Empty means not on sale yet. */
+const CHECKOUT = { player: '', coach: '', academy: '' };
+document.querySelectorAll('[data-plan]').forEach(a => {
+  const url = CHECKOUT[a.dataset.plan];
+  if (url) a.href = url;
+  else a.addEventListener('click', () => { document.getElementById('checkout-note').hidden = false; });
+});
+</script>
 </body>
 </html>
