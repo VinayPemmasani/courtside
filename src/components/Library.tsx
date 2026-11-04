@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useApp } from '../App';
 import { newId, topFix, type Handedness } from '../core';
 import { STROKE_LABEL, fmtDate } from '../labels';
-import { store, type Player, type SessionSummary } from '../storage/db';
+import { SESSION_KINDS, store, type Player, type SessionKind, type SessionSummary } from '../storage/db';
+import { importBundle } from '../storage/share';
 
 export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
   const { go } = useApp();
@@ -11,6 +12,21 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [name, setName] = useState('');
   const [hand, setHand] = useState<Handedness>('right');
+  const [kindFilter, setKindFilter] = useState<SessionKind | 'all'>('all');
+  const [importing, setImporting] = useState(false);
+
+  const importShared = async (f: File | undefined) => {
+    if (!f) return;
+    setImporting(true);
+    try {
+      const { session } = await importBundle(f);
+      go({ name: 'session', id: session.id });
+    } catch (e: any) {
+      alert(e?.message ?? String(e));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const reload = async () => {
     const ps = await store.players();
@@ -19,6 +35,7 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
   };
   useEffect(() => { reload(); }, []);
   useEffect(() => {
+    setKindFilter('all');
     if (selected) store.sessions(selected).then(setSessions);
     else setSessions([]);
   }, [selected]);
@@ -60,6 +77,11 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
           </div>
           <button className="primary" type="submit" disabled={!name.trim()}>Add player</button>
         </form>
+        <label className="import-shared">
+          <input type="file" accept=".courtside,application/zip" hidden onChange={(e) => { importShared(e.target.files?.[0]); e.target.value = ''; }} />
+          <span className="button">{importing ? 'Importing…' : 'Open a shared session'}</span>
+          <small className="muted">A .courtside file from a teammate or coach</small>
+        </label>
       </aside>
 
       <section className="sessions">
@@ -86,8 +108,16 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
                 <p>No sessions yet. Film one player from the side or from behind, at 60 fps if your phone allows, and import the clip.</p>
               </div>
             )}
+            {sessions.length > 0 && (
+              <div className="seg wrap kind-filter">
+                <button className={kindFilter === 'all' ? 'on' : ''} onClick={() => setKindFilter('all')}>All</button>
+                {SESSION_KINDS.filter((k) => sessions.some((s) => (s.kind ?? 'rally') === k.id)).map((k) => (
+                  <button key={k.id} className={kindFilter === k.id ? 'on' : ''} onClick={() => setKindFilter(k.id)}>{k.label}</button>
+                ))}
+              </div>
+            )}
             <div className="session-grid">
-              {sessions.map((s) => {
+              {sessions.filter((s) => kindFilter === 'all' || (s.kind ?? 'rally') === kindFilter).map((s) => {
                 const counts = s.strokes.reduce<Record<string, number>>((acc, st) => ({ ...acc, [st.type]: (acc[st.type] ?? 0) + 1 }), {});
                 const fix = s.strokes.map(topFix).find(Boolean);
                 return (
@@ -95,6 +125,8 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
                     <h3>{s.title}</h3>
                     <p className="muted">{fmtDate(s.createdAt)} · {s.strokes.length} stroke{s.strokes.length === 1 ? '' : 's'}</p>
                     <p className="chips">
+                      <span className="chip kind">{SESSION_KINDS.find((k) => k.id === (s.kind ?? 'rally'))?.label}</span>
+                      {!!s.bounces?.length && <span className="chip">{s.bounces.length} bounces</span>}
                       {Object.entries(counts).map(([t, n]) => (
                         <span key={t} className="chip">{n} {STROKE_LABEL[t as keyof typeof STROKE_LABEL]}</span>
                       ))}

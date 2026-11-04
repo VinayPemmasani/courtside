@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../App';
 import {
-  formatMetric, METRIC_INFO, movePhase, newId, prepare, retypeStroke, shareAt, strokeAt, topFix, weightTransfer,
+  checkSetup, formatMetric, METRIC_INFO, movePhase, strokeForBounce, type Lines, type Vec2, newId, prepare, retypeStroke, shareAt, strokeAt, topFix, weightTransfer,
   type AnchorJoint, type Callout, type KeyPoint, type Phase, type Stroke, type StrokeType,
 } from '../core';
 import { STROKE_LABEL, STROKE_TYPES, fmtTime } from '../labels';
-import { store, TAGS, type Player, type Session } from '../storage/db';
+import { SESSION_KINDS, store, TAGS, type Player, type Session, type SessionKind } from '../storage/db';
+import { placeBounces, sessionBundle, sessionCsv } from '../storage/share';
+import { saveFile, slug } from '../render/files';
+import { drawCourtOverlay, fromCanvas } from '../render/court';
+import { CourtPanel } from './CourtPanel';
+import { SetupBadge } from './FilmingGuide';
 import { drawCallouts, drawSkeleton, drawTrail, drawVideo, fullCrop, type LabelBox, type View } from '../render/overlay';
 import { FrameGrabber } from '../render/grabber';
 import { canExportVideo, exportCarousel, exportPdf, exportVideo, renderCard, type CardContext } from '../render/export';
@@ -38,6 +43,10 @@ export function SessionView({ id }: { id: string }) {
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [studio, setStudio] = useState(false);
+  const [placement, setPlacement] = useState(false);
+  const [corners, setCorners] = useState<Vec2[] | null>(null);
+  const [selBounce, setSelBounce] = useState<string>();
+  const viewRef = useRef<View>();
   const studioScene = useRef<StudioScene>();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -70,6 +79,8 @@ export function SessionView({ id }: { id: string }) {
 
   const prepared = useMemo(() => (session && player ? prepare(session.frames, session.fps, player.hand) : null), [session?.frames, player]);
   const stroke = session?.strokes.find((s) => s.id === strokeId);
+  const placed = useMemo(() => (session && prepared ? placeBounces(session, prepared.frames) : []), [session, prepared]);
+  const setup = useMemo(() => (session ? checkSetup(session.frames, session.fps, session.width / (session.height || 1)) : null), [session?.frames]);
   const phaseHere = stroke?.phases.find((p) => p.frame === frame);
   const nFrames = session?.frames.length ?? 0;
 
@@ -91,20 +102,29 @@ export function SessionView({ id }: { id: string }) {
   }, [session, save]);
 
   // Drawing reads the latest state through a ref, so the playback loop never sees stale data.
-  const latest = useRef({ session, prepared, stroke, player, coach, selCallout, studio });
-  latest.current = { session, prepared, stroke, player, coach, selCallout, studio };
+  const latest = useRef({ session, prepared, stroke, player, coach, selCallout, studio, placement, corners, placed, selBounce });
+  latest.current = { session, prepared, stroke, player, coach, selCallout, studio, placement, corners, placed, selBounce };
 
   const draw = useCallback(() => {
     const v = videoRef.current;
     const c = canvasRef.current;
-    const { session: s, prepared: p, stroke: st, player: pl, selCallout: sel, studio: look } = latest.current;
+    const { session: s, prepared: p, stroke: st, player: pl, selCallout: sel, studio: look, placement: court, corners: pending, placed: bounces, selBounce: selB } = latest.current;
     if (!v || !c || !s || !p || !pl || !v.videoWidth) return;
     const dpr = window.devicePixelRatio || 1;
     const W = Math.round(c.clientWidth * dpr);
     const H = Math.round((W * v.videoHeight) / v.videoWidth);
     if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
     const view: View = { ctx: c.getContext('2d')!, W, H, vw: v.videoWidth, vh: v.videoHeight, crop: fullCrop(v.videoWidth, v.videoHeight) };
+    viewRef.current = view;
     const i = Math.max(0, Math.min(s.frames.length - 1, Math.round((v.currentTime - s.start) * s.fps)));
+    if (court) {
+      // Shot placement: the plain video with the calibrated court and the bounces near this frame.
+      drawVideo(view, v);
+      drawSkeleton(view, p.frames[i]?.image ?? null);
+      drawCourtOverlay(view, s.court, pending ?? [], bounces, i, s.fps, selB);
+      boxes.current = [];
+      return;
+    }
     const inStroke = st && i >= st.startFrame && i <= st.endFrame ? st : s.strokes.find((x) => i >= x.startFrame && i <= x.endFrame);
     if (look) {
       // 3D studio preview; callouts on a paused phase frame show as rings and pinned labels.
@@ -130,7 +150,7 @@ export function SessionView({ id }: { id: string }) {
     }
   }, []);
 
-  useEffect(() => { draw(); }, [draw, session, frame, coach, selCallout, prepared, studio]);
+  useEffect(() => { draw(); }, [draw, session, frame, coach, selCallout, prepared, studio, placement, corners, placed, selBounce]);
   useEffect(() => { if (studio) loadStudioFonts().then(() => draw()); }, [studio, draw]);
   useEffect(() => () => studioScene.current?.dispose(), []);
 
@@ -247,6 +267,7 @@ export function SessionView({ id }: { id: string }) {
     return { x: ((e.clientX - r.left) / r.width) * c.width, y: ((e.clientY - r.top) / r.height) * c.height };
   };
   const onPointerDown = (e: React.PointerEvent) => {
+    if (placement) { placementTap(e); return; }
     if (!coach) return;
     const p = canvasPoint(e);
     const hit = boxes.current.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
@@ -268,6 +289,38 @@ export function SessionView({ id }: { id: string }) {
     drag.current = null;
   };
 
+  // Shot placement taps: four court corners while calibrating, otherwise a bounce.
+  const placementTap = (e: React.PointerEvent) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const pt = fromCanvas(view, canvasPoint(e));
+    if (corners) {
+      const next = [...corners, pt];
+      if (next.length < 4) { setCorners(next); return; }
+      setCorners(null);
+      save({ ...session, court: { corners: next, lines: session.court?.lines ?? 'singles' } });
+      return;
+    }
+    if (!session.court) return;
+    const st = strokeForBounce(session.strokes, frame, session.fps);
+    const b = { id: newId('bo'), frame, u: pt.x, v: pt.y, strokeId: st?.id };
+    save({ ...session, bounces: [...(session.bounces ?? []), b].sort((a, b2) => a.frame - b2.frame) });
+    setSelBounce(b.id);
+  };
+  const editBounces = (fn: (bs: NonNullable<Session['bounces']>) => NonNullable<Session['bounces']>) => save({ ...session, bounces: fn(session.bounces ?? []) });
+
+  const shareSession = async () => {
+    setBusy('Packing session…');
+    try {
+      await saveFile(await sessionBundle(session, player), `${slug(player.name)}-${slug(session.title)}.courtside`, [{ name: 'Courtside session', extensions: ['courtside'] }]);
+    } catch (e: any) {
+      alert(`Share failed: ${e?.message ?? e}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const exportCsv = () => saveFile(new Blob([sessionCsv(session, player)], { type: 'text/csv' }), `${slug(player.name)}-${slug(session.title)}.csv`, [{ name: 'CSV', extensions: ['csv'] }]);
+
   const phaseKps = (pid: Phase['id']) => stroke?.keyPoints.filter((k) => k.phaseId === pid) ?? [];
   const phaseCos = (pid: Phase['id']) => stroke?.callouts.filter((c) => c.phaseId === pid) ?? [];
   const insideStroke = stroke && frame >= stroke.startFrame && frame <= stroke.endFrame;
@@ -282,8 +335,13 @@ export function SessionView({ id }: { id: string }) {
             <button key={t} className={`chip tag ${session.tags.includes(t) ? 'on' : ''}`} onClick={() => save({ ...session, tags: session.tags.includes(t) ? session.tags.filter((x) => x !== t) : [...session.tags, t] })}>{t}</button>
           ))}
         </div>
+        <select className="kind-select" value={session.kind ?? 'rally'} onChange={(e) => save({ ...session, kind: e.target.value as SessionKind })} title="Session type">
+          {SESSION_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+        </select>
+        {setup && <SetupBadge report={setup} />}
         <div className="spacer" />
-        <label className="toggle" title="3D mannequin on a virtual court, with racket path, ball flight and weight transfer"><input type="checkbox" checked={studio} onChange={(e) => setStudio(e.target.checked)} /> Studio look</label>
+        <label className="toggle" title="Tap the court corners once, then tap each bounce for line calls, depth and speed"><input type="checkbox" checked={placement} onChange={(e) => { setPlacement(e.target.checked); if (e.target.checked) setStudio(false); else setCorners(null); }} /> Shot placement</label>
+        <label className="toggle" title="3D mannequin on a virtual court, with racket path, ball flight and weight transfer"><input type="checkbox" checked={studio} onChange={(e) => { setStudio(e.target.checked); if (e.target.checked) { setPlacement(false); setCorners(null); } }} /> Studio look</label>
         <label className="toggle"><input type="checkbox" checked={coach} onChange={(e) => setCoach(e.target.checked)} /> Coach editing</label>
         <div className="export">
           {busy ? <span className="muted">{busy}</span> : (
@@ -292,6 +350,8 @@ export function SessionView({ id }: { id: string }) {
               <button disabled={!stroke} onClick={() => runExport('PDF', exportPdf)}>PDF report</button>
               {canExportVideo() && <button disabled={!stroke} onClick={() => runExport('Video', exportVideo)}>Vertical video</button>}
               {canExportVideo() && <button className="primary" disabled={!stroke} onClick={() => runExport('Studio video', exportStudioVideo)}>Studio video</button>}
+              <button onClick={exportCsv} title="Every stroke metric, key point and bounce as a spreadsheet">Data (CSV)</button>
+              <button onClick={shareSession} title="One .courtside file with the video and the analysis, to open in another Courtside">Share session</button>
             </>
           )}
         </div>
@@ -326,7 +386,7 @@ export function SessionView({ id }: { id: string }) {
           <div className="canvas-wrap" style={{ aspectRatio: `${session.width} / ${session.height}` }}>
             <canvas
               ref={canvasRef}
-              className={coach ? 'editing' : ''}
+              className={placement ? 'placing' : coach ? 'editing' : ''}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -390,7 +450,21 @@ export function SessionView({ id }: { id: string }) {
         </section>
 
         <aside className="side">
-          {!stroke ? <p className="muted">Select a stroke.</p> : (
+          {placement ? (
+            <CourtPanel
+              session={session}
+              bounces={placed}
+              calibrating={corners ? corners.length : null}
+              selected={selBounce}
+              onSelect={setSelBounce}
+              onCalibrate={() => { videoRef.current?.pause(); setCorners([]); }}
+              onCancelCalibrate={() => setCorners(null)}
+              onLines={(l: Lines) => save({ ...session, court: { ...session.court!, lines: l } })}
+              onDelete={(bid) => editBounces((bs) => bs.filter((b) => b.id !== bid))}
+              onToggleServe={(bid, serve) => editBounces((bs) => bs.map((b) => (b.id === bid ? { ...b, serve } : b)))}
+              onSeek={seekFrame}
+            />
+          ) : !stroke ? <p className="muted">Select a stroke.</p> : (
             <>
               <div className="stroke-head">
                 <select value={stroke.type} onChange={(e) => updateStroke(retypeStroke(prepared, stroke, e.target.value as StrokeType, rules))}>

@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase } from 'idb';
-import type { Handedness, PoseFrame, Rule, Stroke } from '../core';
+import type { Bounce, CourtCalibration, Handedness, PoseFrame, Rule, Stroke } from '../core';
 import { DEFAULT_RULES } from '../core';
 
 export interface Player {
@@ -11,6 +11,16 @@ export interface Player {
 
 export type Tag = 'Technique' | 'Tactics' | 'Footwork';
 export const TAGS: Tag[] = ['Technique', 'Tactics', 'Footwork'];
+
+/** What kind of hitting the clip shows, like a drill type. */
+export type SessionKind = 'rally' | 'machine' | 'feed' | 'serve' | 'match';
+export const SESSION_KINDS: { id: SessionKind; label: string; hint: string }[] = [
+  { id: 'rally', label: 'Rally', hint: 'Hitting with a partner' },
+  { id: 'machine', label: 'Ball machine', hint: 'Balls from a machine' },
+  { id: 'feed', label: 'Coach feed', hint: 'Coach feeding by hand or racket' },
+  { id: 'serve', label: 'Serve practice', hint: 'Serves only' },
+  { id: 'match', label: 'Match', hint: 'Points or match play' },
+];
 
 export interface Session {
   id: string;
@@ -27,6 +37,11 @@ export interface Session {
   strokes: Stroke[];
   tags: Tag[];
   notes: string;
+  /** Older sessions have no kind; they read as rallies. */
+  kind?: SessionKind;
+  /** Court corners tapped on the video, for shot placement. */
+  court?: CourtCalibration;
+  bounces?: Bounce[];
 }
 
 /** The session list view, without the heavy pose data. */

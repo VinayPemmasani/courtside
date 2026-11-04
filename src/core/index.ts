@@ -10,3 +10,5 @@ export { cleanFrames, smoothSeries } from './smoothing';
 export * from './weight';
 export * from './scene';
 export * from './racket';
+export * from './court';
+export * from './setup';
