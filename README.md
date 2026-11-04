@@ -69,6 +69,10 @@ Measurements use the model's 3D landmarks (metres, centred on the hips), so they
 - **Bounces are tapped, not detected.** Courtside does not track the ball automatically yet; line calls are as precise as the tapped point and the court calibration. Shot speed is ground distance over time from contact to the bounce, so it reads a little below a radar gun.
 - Only one camera, one player per clip; match stats from rally video are planned as phase 2.
 
+## Website
+
+`website/` is the Courtside marketing and FAQ site: one static `index.html` with its images and a sample reel in `website/img`. Open it directly or host the folder on any static host (GitHub Pages, Netlify). The download button points at this repository's Releases page; the price section says "free during early access", so change it there if that changes.
+
 ## Licences
 
 MediaPipe Pose (Apache 2.0) is the pose model; no AGPL components are used.

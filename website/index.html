@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Courtside</title>
+<meta name="description" content="Courtside breaks down every forehand, backhand and serve from a phone video: phases, angles, coaching cues, line calls and shot speed. Runs on your computer, works offline.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Mono:wght@400;700&display=swap">
+<link rel="icon" href="img/icon.svg">
+<style>
+/* Layout: a hard-court page. Light chalk-blue grounds with a deep court-blue band for the hero and the FAQ scoreboard; lime marks only what the app itself marks (contact, IN calls). */
+:root {
+  --ground: #edf3f6;
+  --surface: #ffffff;
+  --ink: #0f1b2b;
+  --soft: #4d5d72;
+  --line: #cbd9e2;
+  --court: #1f5b7a;
+  --court-deep: #12384d;
+  --on-court: #f2f7fb;
+  --on-court-soft: #b7cddb;
+  --ball: #d4f04c;
+  --ball-ink: #0d1220;
+  --out: #e0603c;
+  --display: 'Anton', 'Impact', 'Arial Narrow', sans-serif;
+  --body: 'Barlow', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'Space Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0b111c; --surface: #121b2b; --ink: #eef2fb; --soft: #9aa8c0; --line: #25324a;
+    --court: #184a64; --court-deep: #0e2a3b; --on-court: #f2f7fb; --on-court-soft: #a9c2d3; --out: #ff8a65;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0b111c; --surface: #121b2b; --ink: #eef2fb; --soft: #9aa8c0; --line: #25324a;
+  --court: #184a64; --court-deep: #0e2a3b; --on-court: #f2f7fb; --on-court-soft: #a9c2d3; --out: #ff8a65;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.55; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--court-deep); }
+a { color: inherit; }
+img, video { max-width: 100%; height: auto; display: block; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+:focus-visible { outline: 3px solid var(--ball); outline-offset: 3px; border-radius: 4px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+.eyebrow { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.14em; text-transform: uppercase; }
+
+/* Top bar */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 9; background: var(--court-deep); color: var(--on-court); }
+.bar .wrap { display: flex; align-items: center; gap: 24px; padding-block: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-size: 24px; letter-spacing: 0.02em; text-decoration: none; }
+.brand svg { width: 26px; height: 26px; }
+.bar nav { display: flex; gap: 22px; margin-left: auto; font-weight: 600; font-size: 15px; }
+.bar nav a { text-decoration: none; color: var(--on-court-soft); }
+.bar nav a:hover { color: var(--on-court); }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px; border-radius: 999px; font-weight: 700; text-decoration: none; border: 2px solid transparent; font-size: 16px; }
+.btn.ball { background: var(--ball); color: var(--ball-ink); }
+.btn.ghost { border-color: currentColor; }
+.bar .btn { padding: 7px 16px; font-size: 14px; }
+
+/* Hero: the court band */
+.hero { background: var(--court); color: var(--on-court); position: relative; overflow: hidden; }
+.hero::before { content: ""; position: absolute; inset: 0; background:
+  linear-gradient(90deg, transparent calc(50% - 1px), rgba(255,255,255,0.22) calc(50% - 1px), rgba(255,255,255,0.22) calc(50% + 1px), transparent calc(50% + 1px)),
+  linear-gradient(transparent 0 72%, rgba(255,255,255,0.22) 72% calc(72% + 2px), transparent calc(72% + 2px)); pointer-events: none; }
+.hero .wrap { position: relative; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr); gap: 48px; align-items: center; padding-block: 72px 0; }
+.hero h1 { font-family: var(--display); font-weight: 400; font-size: clamp(54px, 9vw, 116px); line-height: 0.92; letter-spacing: 0.005em; text-transform: uppercase; }
+.hero h1 em { font-style: normal; color: var(--ball); }
+.hero .lede { margin-top: 22px; font-size: 20px; max-width: 34ch; color: var(--on-court-soft); }
+.hero .ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+.hero .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 28px; padding-bottom: 64px; color: var(--on-court-soft); }
+.hero .phone { align-self: end; justify-self: center; width: min(330px, 100%); border-radius: 26px 26px 0 0; border: 8px solid #0b1220; border-bottom: none; overflow: hidden; box-shadow: 0 -10px 60px rgba(4, 14, 24, 0.45); }
+.hero .phone img { aspect-ratio: 9 / 14; height: auto; object-fit: cover; object-position: top; width: 100%; }
+
+/* Sections */
+section { padding-block: 88px; }
+.sec-head { display: grid; gap: 12px; max-width: 720px; margin-bottom: 44px; }
+.sec-head .eyebrow { color: var(--court); }
+:root[data-theme="dark"] .sec-head .eyebrow { color: var(--on-court-soft); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sec-head .eyebrow { color: var(--on-court-soft); } }
+.sec-head h2 { font-family: var(--display); font-weight: 400; font-size: clamp(36px, 5vw, 56px); line-height: 1; text-transform: uppercase; }
+.sec-head p { color: var(--soft); font-size: 19px; max-width: 60ch; }
+
+/* Feature rows */
+.feature { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 48px; align-items: center; padding-block: 36px; border-top: 1px solid var(--line); }
+.feature.flip > :first-child { order: 2; }
+.feature h3 { font-size: 30px; line-height: 1.1; font-weight: 700; margin-bottom: 12px; }
+.feature p { color: var(--soft); max-width: 52ch; }
+.feature ul { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.feature li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: baseline; }
+.feature li::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--ball); box-shadow: 0 0 0 2px var(--court); transform: translateY(1px); }
+.shot { border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 18px 50px rgba(15, 27, 43, 0.12); }
+.shot.reel { max-width: 340px; justify-self: center; background: #000; }
+.tag { display: inline-block; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: var(--ball); color: var(--ball-ink); margin-bottom: 14px; }
+
+/* Line-call card: a live-looking bounce map drawn in SVG */
+.callcard { background: var(--court-deep); color: var(--on-court); border-radius: 16px; padding: 22px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: center; }
+.callcard svg { width: 100%; height: auto; }
+.callcard .calls { display: grid; gap: 10px; font-family: var(--mono); font-size: 13.5px; }
+.callcard .call { display: grid; grid-template-columns: 54px 1fr; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.06); }
+.callcard .call b { font-family: var(--display); font-weight: 400; font-size: 22px; letter-spacing: 0.03em; }
+.callcard .call.in b { color: var(--ball); }
+.callcard .call.out b { color: #ff8a65; }
+.callcard .call span { color: var(--on-court-soft); }
+.callcard .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.callcard .totals div { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 8px 4px; }
+.callcard .totals strong { display: block; font-family: var(--display); font-weight: 400; font-size: 26px; font-variant-numeric: tabular-nums; }
+.callcard .totals small { color: var(--on-court-soft); font-size: 12px; }
+
+/* Filming setup */
+.setup { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 48px; align-items: start; }
+.setup ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; counter-reset: step; }
+.setup li { counter-increment: step; display: grid; grid-template-columns: 52px 1fr; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.setup li::before { content: counter(step); font-family: var(--display); font-size: 34px; line-height: 1; color: var(--court); }
+:root[data-theme="dark"] .setup li::before { color: var(--ball); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .setup li::before { color: var(--ball); } }
+.setup li strong { display: block; font-size: 18px; }
+.setup li span { color: var(--soft); }
+.setup .figure { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: grid; gap: 14px; }
+.setup .figure svg { width: 100%; height: auto; }
+.setup .figure p { color: var(--soft); font-size: 15px; }
+.measure { font-family: var(--mono); font-size: 11px; fill: var(--soft); }
+
+/* Strip of smaller features */
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 2px solid var(--ink); }
+.grid3 article { padding: 26px 26px 26px 0; display: grid; gap: 8px; align-content: start; }
+.grid3 article + article { padding-left: 26px; border-left: 1px solid var(--line); }
+.grid3 h3 { font-size: 21px; font-weight: 700; }
+.grid3 p { color: var(--soft); }
+.grid3 .eyebrow { color: var(--soft); }
+
+/* Privacy and price */
+.plan { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 36px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; }
+.plan .price { font-family: var(--display); font-size: 84px; line-height: 0.9; }
+.plan .price small { font-family: var(--body); font-size: 18px; color: var(--soft); margin-left: 6px; }
+.plan ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.plan li { padding-left: 26px; position: relative; }
+.plan li::before { content: "✓"; position: absolute; left: 0; color: var(--court); font-weight: 700; }
+:root[data-theme="dark"] .plan li::before { color: var(--ball); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .plan li::before { color: var(--ball); } }
+.plan .os { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+.plan .os span { font-family: var(--mono); font-size: 12.5px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; }
+
+/* FAQ: the scoreboard band */
+.faq { background: var(--court-deep); color: var(--on-court); }
+.faq .sec-head .eyebrow { color: var(--ball); }
+.faq .sec-head p { color: var(--on-court-soft); }
+.faq-cols { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; align-items: start; }
+.faq-index { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 80px); display: grid; gap: 6px; }
+.faq-index a { text-decoration: none; color: var(--on-court-soft); font-weight: 600; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.faq-index a:hover { color: var(--ball); }
+.faq-group { display: grid; gap: 0; margin-bottom: 36px; scroll-margin-top: 90px; }
+.faq-group h3 { font-family: var(--mono); font-weight: 700; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ball); margin-bottom: 8px; }
+details { border-top: 1px solid rgba(255,255,255,0.14); }
+details:last-child { border-bottom: 1px solid rgba(255,255,255,0.14); }
+summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: 1fr 28px; gap: 16px; padding: 18px 0; font-size: 19px; font-weight: 600; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; font-family: var(--body); font-weight: 400; font-size: 30px; line-height: 1; color: var(--ball); text-align: center; transition: transform 0.2s; }
+details[open] summary::after { transform: rotate(45deg); }
+.answer { padding: 0 44px 22px 0; color: var(--on-court-soft); display: grid; gap: 10px; max-width: 70ch; }
+.answer ol, .answer ul { margin: 0; padding-left: 22px; display: grid; gap: 4px; }
+.answer strong { color: var(--on-court); }
+.answer code { font-family: var(--mono); font-size: 0.86em; background: rgba(255,255,255,0.08); padding: 1px 6px; border-radius: 5px; }
+
+footer { padding-block: 40px; color: var(--soft); font-size: 15px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center; }
+footer .brand { color: var(--ink); font-size: 20px; }
+
+@media (max-width: 900px) {
+  .hero .wrap, .feature, .setup, .plan, .callcard, .faq-cols { grid-template-columns: minmax(0, 1fr); }
+  .feature.flip > :first-child { order: 0; }
+  .hero .wrap { padding-block: 48px 0; }
+  .hero .facts { padding-bottom: 8px; }
+  .faq-index { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid3 { grid-template-columns: minmax(0, 1fr); }
+  .grid3 article, .grid3 article + article { padding: 22px 0; border-left: none; border-top: 1px solid var(--line); }
+  .bar nav { display: none; }
+  .bar .btn { margin-left: auto; }
+  section { padding-block: 64px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hero .phone { animation: rise 0.9s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes rise { from { transform: translateY(40px); } to { transform: none; } }
+  .ballmark { animation: land 1.2s ease-out both; transform-box: fill-box; transform-origin: center; }
+  .ballmark:nth-of-type(2) { animation-delay: .15s; } .ballmark:nth-of-type(3) { animation-delay: .3s; } .ballmark:nth-of-type(4) { animation-delay: .45s; }
+  @keyframes land { 0% { transform: scale(1.8); } 60% { transform: scale(0.9); } 100% { transform: scale(1); } }
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Courtside home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="#d4f04c"/><path d="M5 9c6 3 6 11 0 14M27 9c-6 3-6 11 0 14" fill="none" stroke="#12384d" stroke-width="2.4" stroke-linecap="round"/></svg>
+      COURTSIDE
+    </a>
+    <nav aria-label="Sections">
+      <a href="#features">Features</a>
+      <a href="#line-calls">Line calls</a>
+      <a href="#filming">How to film</a>
+      <a href="#price">Price</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn ball" href="#price">Get Courtside</a>
+  </div>
+</header>
+
+<main id="top">
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow" style="color: var(--ball); margin-bottom: 18px">Tennis video analysis for players and coaches</p>
+        <h1>Film the swing. <em>See the fix.</em></h1>
+        <p class="lede">Courtside breaks down every forehand, backhand and serve from a phone video, calls your bounces in or out, and tells you the one thing to work on next.</p>
+        <div class="ctas">
+          <a class="btn ball" href="#price">Download for desktop</a>
+          <a class="btn ghost" href="#filming">How to film a session</a>
+        </div>
+        <p class="facts eyebrow"><span>Windows · macOS · Linux</span><span>Works offline</span><span>Video never leaves your computer</span></p>
+      </div>
+      <div class="phone"><img src="img/studio-contact.jpg" alt="Studio reel frame: a 3D mannequin at contact on a forehand, with callouts CONTACT OUT FRONT and ARM HAS SPACE and a weight transfer gauge reading 49% front foot." width="720" height="1280"></div>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="eyebrow">What it does</p>
+        <h2>A coach's eye on every stroke</h2>
+        <p>Import a clip. Courtside tracks the player's body frame by frame, finds each swing, names it and splits it into the phases coaches teach.</p>
+      </div>
+
+      <div class="feature">
+        <div>
+          <span class="tag">Stroke breakdown</span>
+          <h3>Six phases, real angles, plain-language cues</h3>
+          <p>Ready, unit turn, backswing, racket drop, contact and follow-through, with the trophy position on serves. Each phase is measured in 3D and checked against target ranges you can tune as a coach.</p>
+          <ul>
+            <li>Shoulder turn, hitting-elbow angle, knee bend, contact point and finish height</li>
+            <li>Callouts drawn on the frame, like LEFT HAND ON THROAT</li>
+            <li>Forehand, one- and two-handed backhand and serve detected automatically</li>
+          </ul>
+        </div>
+        <div class="shot"><img src="img/studio-frames.jpg" alt="Six studio frames of a forehand, one per phase, each with highlighted joints and short coaching labels." width="1600" height="711"></div>
+      </div>
+
+      <div class="feature flip" id="line-calls">
+        <div>
+          <span class="tag">New · Shot placement</span>
+          <h3>Line calls, depth and ball speed from your own footage</h3>
+          <p>Tap the four corners of the singles court once. Then tap where each ball lands. Courtside maps the bounce onto the court and makes the call, down to the centimetre.</p>
+          <ul>
+            <li>IN or OUT with the margin, and the line that decided it</li>
+            <li>Serves checked against the service boxes</li>
+            <li>Short, mid or deep (the last 2.74 m), left, middle or right</li>
+            <li>Average ball speed from contact to bounce, per shot and per session</li>
+          </ul>
+        </div>
+        <div class="callcard" aria-label="Example bounce map with three calls">
+          <svg viewBox="-6.5 -0.5 13 14.6" role="img" aria-label="Far half of a tennis court with two balls in and one long">
+            <rect x="-6.5" y="-0.5" width="13" height="14.6" fill="#0c2433"/>
+            <rect x="-5.485" y="1" width="10.97" height="11.885" fill="#2a6d8f"/>
+            <rect x="-4.115" y="1" width="8.23" height="2.74" fill="rgba(212,240,76,0.12)"/>
+            <g stroke="#f2f6ff" stroke-width="0.08">
+              <line x1="-5.485" x2="5.485" y1="1" y2="1"/>
+              <line x1="-4.115" x2="-4.115" y1="1" y2="12.885"/><line x1="4.115" x2="4.115" y1="1" y2="12.885"/>
+              <line x1="-5.485" x2="-5.485" y1="1" y2="12.885" stroke-opacity="0.35"/><line x1="5.485" x2="5.485" y1="1" y2="12.885" stroke-opacity="0.35"/>
+              <line x1="-4.115" x2="4.115" y1="6.485" y2="6.485"/><line x1="0" x2="0" y1="6.485" y2="12.885"/>
+              <line x1="-6.3" x2="6.3" y1="12.885" y2="12.885" stroke-width="0.18"/>
+            </g>
+            <g font-family="Space Mono, monospace" font-size="0.42" font-weight="700" text-anchor="middle">
+              <g class="ballmark"><circle cx="1.5" cy="2.17" r="0.4" fill="#d4f04c"/><text x="1.5" y="2.31" fill="#0d1220">1</text></g>
+              <g class="ballmark"><circle cx="-3.3" cy="4.57" r="0.4" fill="#d4f04c"/><text x="-3.3" y="4.71" fill="#0d1220">2</text></g>
+              <g class="ballmark"><circle cx="2.6" cy="0.67" r="0.4" fill="#ff8a65"/><text x="2.6" y="0.81" fill="#0d1220">3</text></g>
+            </g>
+          </svg>
+          <div class="calls">
+            <div class="call in"><b>IN</b><span>by 117 cm · deep right · 102 km/h</span></div>
+            <div class="call in"><b>IN</b><span>by 82 cm · mid left · 93 km/h</span></div>
+            <div class="call out"><b>OUT</b><span>long by 33 cm · baseline</span></div>
+            <div class="totals">
+              <div><strong>67%</strong><small>in</small></div>
+              <div><strong>33%</strong><small>deep</small></div>
+              <div><strong>98</strong><small>km/h avg</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="feature">
+        <div>
+          <span class="tag">Coach reels</span>
+          <h3>Turn a lesson into a reel your player will actually watch</h3>
+          <p>The studio look rebuilds the player as a 3D mannequin on a virtual court with the racket path, ball flight and weight transfer. Export a 1080×1920 slow-motion reel, a carousel of images or a PDF report.</p>
+          <ul>
+            <li>Edit any cue, drag labels, move a phase to a different frame</li>
+            <li>Side-by-side compare, lined up at contact</li>
+            <li>Progress charts across sessions</li>
+          </ul>
+        </div>
+        <div class="shot reel"><video src="img/reel.mp4" autoplay muted loop playsinline preload="metadata" aria-label="Sample studio reel: a forehand played phase by phase in slow motion with headlines and highlight rings."></video></div>
+      </div>
+
+      <div class="grid3" style="margin-top: 36px">
+        <article>
+          <p class="eyebrow">Session types</p>
+          <h3>Rally, ball machine, coach feed, serves or match</h3>
+          <p>Tag each session with how the balls arrived and filter a player's history by it.</p>
+        </article>
+        <article>
+          <p class="eyebrow">Share</p>
+          <h3>Send a whole session in one file</h3>
+          <p>A <strong>.courtside</strong> file carries the video and the analysis. Your player opens it in their own Courtside.</p>
+        </article>
+        <article>
+          <p class="eyebrow">Your data</p>
+          <h3>Every number as a spreadsheet</h3>
+          <p>Export each stroke's angles, cues and every bounce call as CSV for your own tracking.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="filming" style="background: var(--surface); border-block: 1px solid var(--line)">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="eyebrow">Setup</p>
+        <h2>Two minutes of setup, better numbers all session</h2>
+        <p>Most wrong readings come from the camera, not the player. Courtside scores the filming of every clip and tells you what to change next time.</p>
+      </div>
+      <div class="setup">
+        <ol>
+          <li><div><strong>Tripod at 1.2–1.5 m</strong><span>Chest height, on a tripod or a fence clamp. Handheld clips shake and move the numbers.</span></div></li>
+          <li><div><strong>Pick your spot</strong><span>Behind the baseline, 3–4 m back, for placement, serves and line calls. Side-on, 6–8 m away, for technique.</span></div></li>
+          <li><div><strong>Whole body in the picture</strong><span>Leave room above the head and below the feet, even at the top of the serve.</span></div></li>
+          <li><div><strong>60 fps or faster</strong><span>Slow-motion modes are fine. Choose 60 on the import screen.</span></div></li>
+          <li><div><strong>Tilt slightly down, keep it level</strong><span>More court, less sky. Keep the far baseline in view if you want bounce tracking.</span></div></li>
+        </ol>
+        <div class="figure">
+          <svg viewBox="0 0 360 250" role="img" aria-label="Side view: phone on a tripod 1.3 metres high, 3.5 metres behind the player at the baseline, looking down the court.">
+            <rect x="0" y="200" width="360" height="50" style="fill: var(--court)"/>
+            <line x1="150" y1="200" x2="360" y2="200" style="stroke: var(--on-court)" stroke-width="2"/>
+            <line x1="150" y1="196" x2="150" y2="206" style="stroke: var(--on-court)" stroke-width="3"/>
+            <text x="150" y="226" class="measure" text-anchor="middle" style="fill: var(--on-court)">baseline</text>
+            <rect x="330" y="160" width="4" height="40" style="fill: var(--on-court-soft)"/>
+            <text x="332" y="150" class="measure" text-anchor="middle">net</text>
+            <line x1="40" y1="200" x2="28" y2="140" style="stroke: var(--ink)" stroke-width="2.5"/>
+            <line x1="40" y1="200" x2="52" y2="140" style="stroke: var(--ink)" stroke-width="2.5"/>
+            <line x1="40" y1="200" x2="40" y2="140" style="stroke: var(--ink)" stroke-width="2.5"/>
+            <rect x="32" y="122" width="16" height="22" rx="3" style="fill: var(--ink)"/>
+            <path d="M48 130 L340 178 M48 134 L340 214" style="stroke: var(--out)" stroke-width="1.4" stroke-dasharray="5 4" fill="none"/>
+            <circle cx="172" cy="128" r="9" fill="none" style="stroke: var(--ink)" stroke-width="2.5"/>
+            <line x1="172" y1="137" x2="172" y2="172" style="stroke: var(--ink)" stroke-width="2.5"/>
+            <line x1="172" y1="172" x2="162" y2="200" style="stroke: var(--ink)" stroke-width="2.5"/>
+            <line x1="172" y1="172" x2="184" y2="200" style="stroke: var(--ink)" stroke-width="2.5"/>
+            <line x1="172" y1="148" x2="196" y2="140" style="stroke: var(--ink)" stroke-width="2.5"/>
+            <line x1="12" y1="200" x2="12" y2="133" style="stroke: var(--soft)" stroke-width="1"/>
+            <text x="16" y="110" class="measure">1.3 m</text>
+            <line x1="40" y1="236" x2="166" y2="236" style="stroke: var(--soft)" stroke-width="1"/>
+            <text x="103" y="248" class="measure" text-anchor="middle">3–4 m</text>
+          </svg>
+          <p>Spot A, behind the baseline. The phone sees the player head to toe and the far court lines, which is what shot placement needs.</p>
+          <div class="shot"><img src="img/filming-check.jpg" alt="Courtside's setup check pop-up: filming score 88 out of 100, with a note to film at 60 fps." width="1440" height="900"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="price">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="eyebrow">Price and privacy</p>
+        <h2>Free during early access</h2>
+        <p>No account, no upload, no subscription. Courtside runs on your own computer.</p>
+      </div>
+      <div class="plan">
+        <div>
+          <p class="price">FREE<small>while in early access</small></p>
+          <p style="margin-top: 14px; color: var(--soft)">Install it on as many computers as you like. Coaches can keep every player they work with in one place.</p>
+          <div class="os"><span>Windows .msi</span><span>macOS .dmg</span><span>Linux .AppImage</span></div>
+          <p style="margin-top: 22px"><a class="btn ball" href="https://github.com/vinstarworld007/Tennis/releases">Download Courtside</a></p>
+        </div>
+        <ul>
+          <li>Unlimited players, sessions and exports</li>
+          <li>All analysis runs on your computer; videos are never uploaded</li>
+          <li>Works with no internet connection, on court or on the bus</li>
+          <li>Share with players by file: images, PDF, reels or a whole session</li>
+          <li>Export all of your numbers as CSV whenever you want</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="faq" id="faq">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="eyebrow">FAQ</p>
+        <h2>Questions from the court</h2>
+        <p>Can't find your answer? Open an issue on the Courtside project page and we'll add it here.</p>
+      </div>
+      <div class="faq-cols">
+        <nav class="faq-index" aria-label="FAQ topics">
+          <a href="#faq-start">Getting started</a>
+          <a href="#faq-accuracy">Accuracy</a>
+          <a href="#faq-calls">Line calls and speed</a>
+          <a href="#faq-share">Sharing and data</a>
+          <a href="#faq-help">Troubleshooting</a>
+        </nav>
+        <div>
+          <div class="faq-group" id="faq-start">
+            <h3>Getting started</h3>
+            <details open>
+              <summary>How do I film a session?</summary>
+              <div class="answer">
+                <p>You need a phone, a tripod or fence clamp, and one player on court.</p>
+                <ol>
+                  <li>Set the tripod at about 1.3 m (chest height).</li>
+                  <li>For technique, stand it 6–8 m to the side, level with the player. For shot placement and serves, put it 3–4 m behind the baseline, in line with the player.</li>
+                  <li>Frame the whole body with room above the head and below the feet. Tilt slightly down so you see court, not sky.</li>
+                  <li>Record at 60 fps or faster and start hitting.</li>
+                </ol>
+                <p>In Courtside, pick the player, press <strong>New analysis</strong>, choose the clip, the session type and the part to analyse, then press <strong>Analyse</strong>.</p>
+              </div>
+            </details>
+            <details>
+              <summary>Which computers does it run on?</summary>
+              <div class="answer"><p>Windows, macOS and Linux. It also runs in a modern desktop browser if you start it from the source code. Phones are for filming; the analysis runs on the computer.</p></div>
+            </details>
+            <details>
+              <summary>Do I need an account or an internet connection?</summary>
+              <div class="answer"><p>No to both. There is nothing to sign up for and no login code to wait for. After installing, Courtside works fully offline.</p></div>
+            </details>
+            <details>
+              <summary>Can I analyse more than one player?</summary>
+              <div class="answer"><p>Yes. Add as many players as you coach, each with their own hand (left or right), sessions, progress charts and comparisons. Film one player per clip.</p></div>
+            </details>
+            <details>
+              <summary>Does it work with a ball machine or when I feed balls?</summary>
+              <div class="answer"><p>Yes. Choose <strong>Ball machine</strong> or <strong>Coach feed</strong> as the session type when you import. Stroke analysis works the same; the type helps you filter a player's sessions later. <strong>Serve practice</strong> makes bounces count against the service boxes.</p></div>
+            </details>
+            <details>
+              <summary>Which strokes does it recognise?</summary>
+              <div class="answer"><p>Forehands, one- and two-handed backhands, and serves are found and labelled automatically. Volleys and anything it misses can be marked by hand with <strong>Mark contact</strong>, and any label can be changed.</p></div>
+            </details>
+          </div>
+
+          <div class="faq-group" id="faq-accuracy">
+            <h3>Accuracy</h3>
+            <details>
+              <summary>The numbers look wrong. What should I check?</summary>
+              <div class="answer">
+                <p>Open the <strong>Filming</strong> score at the top of the session. It lists what it saw and what to change. The usual causes:</p>
+                <ul>
+                  <li>The head or feet leave the picture during the swing.</li>
+                  <li>The player is small in the frame (under about a quarter of its height).</li>
+                  <li>The clip was filmed or analysed at 30 fps.</li>
+                  <li>The camera was handheld or tilted.</li>
+                  <li>Another person walked through the frame.</li>
+                </ul>
+                <p>Coach settings let you tune every target range to your own teaching.</p>
+              </div>
+            </details>
+            <details>
+              <summary>How are the angles measured?</summary>
+              <div class="answer"><p>A pose model finds 33 body points in every frame, in 3D and centred on the hips, so angles do not depend on how far away the camera is. Contact is the moment the hitting hand is fastest relative to the hips; it can be a frame or two off, and you can move it.</p></div>
+            </details>
+            <details>
+              <summary>Does it track the racket?</summary>
+              <div class="answer"><p>The racket path is estimated from the hand and forearm, which is close enough for coaching cues and reels. A dedicated racket model is planned.</p></div>
+            </details>
+          </div>
+
+          <div class="faq-group" id="faq-calls">
+            <h3>Line calls and speed</h3>
+            <details>
+              <summary>How does Courtside make a line call?</summary>
+              <div class="answer"><p>You tap the four singles corners once, which lets Courtside map any point on the video to a spot on the court. Then you tap each bounce. The call follows the rules: a ball touching the line is in. You see the margin in centimetres and which line decided it, and you can switch between singles and doubles lines.</p></div>
+            </details>
+            <details>
+              <summary>Does it find the ball by itself?</summary>
+              <div class="answer"><p>Not yet. Today you tap the landing spot, stepping frame by frame to find it. Automatic ball tracking is on the roadmap.</p></div>
+            </details>
+            <details>
+              <summary>How is the ball speed worked out?</summary>
+              <div class="answer"><p>From the player's feet at contact to the bounce, over the time between the two frames. That is the average speed over the ground, so it reads a little lower than a radar gun, which measures the peak just off the strings. It is consistent, so it's good for comparing shots and sessions.</p></div>
+            </details>
+            <details>
+              <summary>How accurate are close calls?</summary>
+              <div class="answer"><p>As accurate as the tap and the calibration. Film from behind the baseline and high enough to see the far lines, calibrate on a clear frame, and zoom in the window for close balls. One camera can't match a multi-camera system on a 2 cm call, so treat those as a guide.</p></div>
+            </details>
+          </div>
+
+          <div class="faq-group" id="faq-share">
+            <h3>Sharing and data</h3>
+            <details>
+              <summary>Can I share videos and analysis with my players or team?</summary>
+              <div class="answer"><p>Yes, in several ways: image carousels for social media, a PDF report, a vertical video, a studio reel, or <strong>Share session</strong>, which saves one <code>.courtside</code> file with the video and the full analysis. Your player opens it with <strong>Open a shared session</strong> on their own computer.</p></div>
+            </details>
+            <details>
+              <summary>How do I download all of a session's data?</summary>
+              <div class="answer"><p>Open the session and press <strong>Data (CSV)</strong>. You get every stroke with its angles per phase, the key points and coach notes, and every bounce with its call, depth, direction and speed.</p></div>
+            </details>
+            <details>
+              <summary>Who can see my videos?</summary>
+              <div class="answer"><p>Only people with access to your computer. Videos and results are stored in the app on your machine and are never uploaded. There is no public feed. Nothing leaves your computer unless you export or share it yourself.</p></div>
+            </details>
+            <details>
+              <summary>Can I use Courtside on more than one computer?</summary>
+              <div class="answer"><p>Yes, install it wherever you like. To move a session between computers, use <strong>Share session</strong> and open the file on the other one.</p></div>
+            </details>
+          </div>
+
+          <div class="faq-group" id="faq-help">
+            <h3>Troubleshooting</h3>
+            <details>
+              <summary>The app freezes or analysis is very slow. What can I do?</summary>
+              <div class="answer">
+                <ol>
+                  <li>Analyse a shorter part of the clip (under a minute works best).</li>
+                  <li>Switch the pose model to <strong>Fast</strong> on the import screen.</li>
+                  <li>Close other heavy apps and check free disk space.</li>
+                  <li>Update to the latest Courtside version.</li>
+                  <li>Restart Courtside, then your computer if needed.</li>
+                </ol>
+              </div>
+            </details>
+            <details>
+              <summary>The vertical video export button is missing.</summary>
+              <div class="answer"><p>Video export uses your system's video encoder. Some Linux setups don't offer one inside the app window; images and PDF still work everywhere.</p></div>
+            </details>
+            <details>
+              <summary>No player was found in my clip.</summary>
+              <div class="answer"><p>Make sure one player fills a good part of the frame with the whole body visible, then try the <strong>Accurate</strong> pose model. Very dark or back-lit clips are hard to read; film with the sun behind the camera.</p></div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top">COURTSIDE</a>
+    <span>Tennis stroke analysis that runs on your computer.</span>
+    <span style="margin-left: auto">Pose model: MediaPipe Pose (Apache 2.0)</span>
+  </div>
+</footer>
+</body>
+</html>
