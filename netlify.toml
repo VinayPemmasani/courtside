@@ -1,0 +1,12 @@
+# Netlify hosting: the sales page at /, the browser version of the app at /app/.
+[build]
+  command = "npm run build:web"
+  publish = "site"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[headers]]
+  for = "/app/models/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"

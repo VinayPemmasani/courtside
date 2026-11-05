@@ -46,7 +46,7 @@ export function App() {
       <div className="app">
         <header className="topbar">
           <button className="brand" onClick={() => setRoute({ name: 'library' })}>
-            <img src="/icon.svg" alt="" /> Courtside
+            <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" /> Courtside
           </button>
           <nav>
             <button className={route.name !== 'rules' ? 'active' : ''} onClick={() => setRoute({ name: 'library' })}>Players</button>

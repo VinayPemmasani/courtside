@@ -5,3 +5,4 @@ public/models
 src-tauri/target
 src-tauri/gen
 *.log
+site/
