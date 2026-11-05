@@ -1,4 +1,4 @@
-# Netlify hosting: the sales page at /, the browser version of the app at /app/.
+# Netlify hosting (optional; GitHub Pages is set up in .github/workflows/pages.yml): the sales page at /, the browser version of the app at /app/.
 [build]
   command = "npm run build:web"
   publish = "site"
