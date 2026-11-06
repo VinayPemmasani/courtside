@@ -1,12 +1,17 @@
 import { anchorIndices, deeperKnee, SKELETON, sides, type Callout, type Handedness, type ImagePoint, type PoseFrame, type Stroke } from '../core';
 
 export const COLORS = {
-  accent: '#d4f04c',
-  fix: '#ff8a65',
-  ink: '#0d1220',
-  bone: 'rgba(235, 244, 255, 0.95)',
-  glow: 'rgba(120, 170, 255, 0.9)',
+  accent: '#f5b544',
+  fix: '#ff5c7a',
+  ink: '#120c02',
+  violet: '#9d8cff',
+  teal: '#43d6c4',
+  bone: 'rgba(226, 232, 246, 0.95)',
+  glow: 'rgba(157, 140, 255, 0.9)',
 };
+
+/** Monospace face used for every label drawn on video, matching the app's telemetry look. */
+export const MONO = '"JetBrains Mono", "Space Mono", ui-monospace, monospace';
 
 /** Source rectangle (video pixels) drawn into the whole canvas. */
 export interface Crop {
@@ -59,7 +64,7 @@ function fitAspect(c: Crop, vw: number, vh: number, aspect: number): Crop {
 }
 
 export function drawVideo(v: View, video: CanvasImageSource) {
-  v.ctx.fillStyle = '#05070d';
+  v.ctx.fillStyle = '#03050a';
   v.ctx.fillRect(0, 0, v.W, v.H);
   v.ctx.drawImage(video, v.crop.sx, v.crop.sy, v.crop.sw, v.crop.sh, 0, 0, v.W, v.H);
 }
@@ -83,10 +88,13 @@ export function drawSkeleton(v: View, pts: ImagePoint[] | null, dim = false) {
   }
   ctx.shadowBlur = 0;
   ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = COLORS.teal;
+  ctx.lineWidth = 1.2 * s;
   for (const i of [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]) {
     if (pts[i].v < 0.3) continue;
     const p = toCanvas(v, pts[i]);
-    ctx.beginPath(); ctx.arc(p.x, p.y, 3.5 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y, 6.5 * s, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.restore();
 }
@@ -151,7 +159,7 @@ export function drawCallouts(v: View, frame: PoseFrame, callouts: Callout[], han
   const s = v.H / 720;
   const boxes: LabelBox[] = [];
   ctx.save();
-  ctx.font = `700 ${Math.round(17 * s)}px Inter, system-ui, sans-serif`;
+  ctx.font = `700 ${Math.round(15 * s)}px ${MONO}`;
   ctx.textBaseline = 'middle';
   for (const c of callouts) {
     if (c.hidden) continue;
@@ -159,41 +167,50 @@ export function drawCallouts(v: View, frame: PoseFrame, callouts: Callout[], han
     if (!a) continue;
     const color = c.status === 'fix' ? COLORS.fix : COLORS.accent;
     const text = c.label.toUpperCase();
-    const w = ctx.measureText(text).width + 22 * s;
-    const h = 34 * s;
+    const w = ctx.measureText(text).width + 26 * s;
+    const h = 32 * s;
     let lx = a.x + c.dx * v.H;
     let ly = a.y + c.dy * v.H;
     lx = Math.max(w / 2 + 8, Math.min(v.W - w / 2 - 8, lx));
     ly = Math.max(h / 2 + 8, Math.min(v.H - h / 2 - 8, ly));
-    const r = 26 * s;
+    const r = 22 * s;
     ctx.strokeStyle = color;
-    ctx.lineWidth = 4 * s;
+    ctx.lineWidth = 2 * s;
     ctx.shadowColor = color;
     ctx.shadowBlur = 10 * s;
+    // Reticle: a ring with four ticks, like a tracking lock.
     ctx.beginPath(); ctx.arc(a.x, a.y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      ctx.moveTo(a.x + dx * (r - 6 * s), a.y + dy * (r - 6 * s));
+      ctx.lineTo(a.x + dx * (r + 8 * s), a.y + dy * (r + 8 * s));
+    }
+    ctx.stroke();
     // Leader from the ring edge toward the label.
     const ang = Math.atan2(ly - a.y, lx - a.x);
     const far = Math.hypot(ly - a.y, lx - a.x);
     if (far > r + h / 2) {
-      ctx.lineWidth = 3 * s;
+      ctx.lineWidth = 1.5 * s;
       ctx.beginPath();
       ctx.moveTo(a.x + Math.cos(ang) * r, a.y + Math.sin(ang) * r);
       ctx.lineTo(lx - Math.cos(ang) * Math.min(w / 2, h / 2 + 4), ly - Math.sin(ang) * (h / 2));
       ctx.stroke();
     }
     ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(5, 7, 12, 0.86)';
+    ctx.fillRect(lx - w / 2, ly - h / 2, w, h);
+    ctx.lineWidth = 1.5 * s;
+    ctx.strokeRect(lx - w / 2, ly - h / 2, w, h);
     ctx.fillStyle = color;
-    roundRect(ctx, lx - w / 2, ly - h / 2, w, h, 6 * s);
-    ctx.fill();
+    ctx.fillRect(lx - w / 2, ly - h / 2, 4 * s, h);
     if (selected === c.id) {
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2 * s;
-      roundRect(ctx, lx - w / 2 - 3, ly - h / 2 - 3, w + 6, h + 6, 8 * s);
-      ctx.stroke();
+      ctx.lineWidth = 1.5 * s;
+      ctx.strokeRect(lx - w / 2 - 4, ly - h / 2 - 4, w + 8, h + 8);
     }
-    ctx.fillStyle = COLORS.ink;
+    ctx.fillStyle = color;
     ctx.textAlign = 'center';
-    ctx.fillText(text, lx, ly + 1);
+    ctx.fillText(text, lx + 2 * s, ly + 1);
     boxes.push({ id: c.id, x: lx - w / 2, y: ly - h / 2, w, h, ax: a.x, ay: a.y });
   }
   ctx.restore();
@@ -223,8 +240,8 @@ export function drawHeader(v: View, opts: { index: number; title: string; subtit
   let y = 70 * s;
   ctx.textBaseline = 'alphabetic';
   if (opts.kicker) {
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.font = `600 ${30 * s}px Inter, system-ui, sans-serif`;
+    ctx.font = `600 ${30 * s}px ${MONO}`;
+    ctx.fillStyle = COLORS.accent;
     ctx.fillText(opts.kicker.toUpperCase(), pad, y);
     y += 30 * s;
   }
@@ -233,9 +250,9 @@ export function drawHeader(v: View, opts: { index: number; title: string; subtit
   let titleX = pad;
   if (opts.index > 0) {
     ctx.fillStyle = COLORS.accent;
-    ctx.beginPath(); ctx.arc(pad + r, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(pad, cy - r, 2 * r, 2 * r);
     ctx.fillStyle = COLORS.ink;
-    ctx.font = `800 ${52 * s}px Inter, system-ui, sans-serif`;
+    ctx.font = `700 ${52 * s}px ${MONO}`;
     ctx.textAlign = 'center';
     ctx.fillText(String(opts.index), pad + r, cy + 18 * s);
     titleX = pad + 2 * r + 24 * s;
@@ -244,21 +261,21 @@ export function drawHeader(v: View, opts: { index: number; title: string; subtit
   ctx.fillStyle = '#ffffff';
   // Shrink long titles ("FOLLOW-THROUGH") so they never run off the edge.
   const room = W - pad - titleX;
-  ctx.font = `800 ${96 * s}px Inter, system-ui, sans-serif`;
+  ctx.font = `700 ${96 * s}px ${MONO}`;
   const size = Math.min(96 * s, (96 * s * room) / Math.max(1, ctx.measureText(opts.title.toUpperCase()).width));
-  ctx.font = `800 ${size}px Inter, system-ui, sans-serif`;
+  ctx.font = `700 ${size}px ${MONO}`;
   ctx.fillText(opts.title.toUpperCase(), titleX, cy + size * 0.35);
   y = cy + r + 70 * s;
   if (opts.subtitle) {
-    ctx.font = `700 ${48 * s}px Inter, system-ui, sans-serif`;
+    ctx.font = `700 ${48 * s}px ${MONO}`;
     for (const line of wrap(ctx, opts.subtitle, W - 2 * pad).slice(0, 3)) {
       ctx.fillText(line, pad, y);
       y += 58 * s;
     }
   }
   ctx.fillStyle = 'rgba(255,255,255,0.65)';
-  ctx.font = `700 ${26 * s}px Inter, system-ui, sans-serif`;
-  ctx.fillText('ANALYZED BY COURTSIDE', pad, y + 6 * s);
+  ctx.font = `700 ${26 * s}px ${MONO}`;
+  ctx.fillText('ANALYZED BY COURTSIDE  |  STROKE TELEMETRY', pad, y + 6 * s);
 }
 
 

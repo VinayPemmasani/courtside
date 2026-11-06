@@ -10,6 +10,12 @@ Tennis stroke analysis for players and coaches. Import a video of a forehand, ba
 
 **Studio look and coach reels.** Tick *Studio look* to see the session as a 3D studio: the player rebuilt as a jointed, shaded mannequin from the pose's 3D landmarks, standing on a dark virtual court with glowing lines, with the racket path (neon), the ball flight (red), highlight rings on the body, and the weight transfer (a glow under each foot plus a back-foot to front-foot gauge). *Studio video* exports a 1080×1920 reel with bold headlines ("THE PROBLEM / FOREHAND / TURN EARLIER."): a title, each phase in slow motion held with its rings and labels, then the full swing with the weight shift summed up. On the Compare screen, *Export split-screen studio video* puts two strokes side by side, lined up at contact, under labels such as PRO and BEGINNER. Reels are encoded frame by frame (WebCodecs) where the system supports it, so they play at full speed even on slow machines.
 
+**Shot placement and line calls.** Tick *Shot placement*, tap the four singles-court corners once, then tap where each ball lands. Courtside draws the calibrated court over the video, calls each bounce in or out with the margin in centimetres (serves against the service boxes), sorts it as short, mid or deep and left, middle or right, links it to the stroke that hit it and estimates the average ball speed from contact to the bounce. A bounce map and in/deep/speed totals sit beside the video.
+
+**Filming help.** The import screen has a filming guide (tripod height, camera spots behind the baseline or side-on, frame rate). After each analysis a *Filming score* checks the clip: player found, whole body in the picture, player size, frame rate, tilt and camera shake, with what to change next time.
+
+**Session types, sharing and data.** Each session is a rally, ball machine, coach feed, serve practice or match, and the player page filters by type. *Share session* saves one `.courtside` file (video plus analysis) that a teammate opens with *Open a shared session*; *Data (CSV)* exports every stroke metric, key point and bounce.
+
 Coaches can edit any key point or callout, drag labels, move a phase to a different frame, re-label a stroke, mark a missed stroke by hand, compare two strokes lined up at contact, follow a player's progress across sessions, and export a breakdown as a carousel of 1080×1350 images, a PDF report, or a 1080×1920 vertical video.
 
 Courtside is a [Tauri 2](https://v2.tauri.app/) desktop app (Windows, macOS, Linux) with a React and TypeScript interface. All analysis runs on the device; nothing is uploaded.
@@ -60,7 +66,12 @@ Measurements use the model's 3D landmarks (metres, centred on the hips), so they
 - **Weight transfer** is the centre of mass (from body-segment weights) projected between the ankles. It reads best when both feet are visible and apart.
 - **Volleys** are not detected automatically; re-label them by hand.
 - **Vertical video export** depends on the system's video encoder; it is hidden where the desktop webview does not support recording (some Linux setups). Images and PDF work everywhere.
+- **Bounces are tapped, not detected.** Courtside does not track the ball automatically yet; line calls are as precise as the tapped point and the court calibration. Shot speed is ground distance over time from contact to the bounce, so it reads a little below a radar gun.
 - Only one camera, one player per clip; match stats from rally video are planned as phase 2.
+
+## Website
+
+`website/` is the Courtside marketing and FAQ site: one static `index.html` with its images and a sample reel in `website/img`. Open it directly or host the folder on any static host (GitHub Pages, Netlify). The download button points at this repository's Releases page; the price section says "free during early access", so change it there if that changes.
 
 ## Licences
 

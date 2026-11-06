@@ -23,6 +23,10 @@ interface AppCtx {
   setRules: (r: Rule[]) => Promise<void>;
 }
 
+const VIEW_LABEL: Record<Route['name'], string> = {
+  library: 'Library', import: 'Import', session: 'Session', compare: 'Compare', trends: 'Progress', rules: 'Coach',
+};
+
 const Ctx = createContext<AppCtx>(null!);
 export const useApp = () => useContext(Ctx);
 
@@ -46,12 +50,19 @@ export function App() {
       <div className="app">
         <header className="topbar">
           <button className="brand" onClick={() => setRoute({ name: 'library' })}>
-            <img src="/icon.svg" alt="" /> Courtside
+            <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" /> COURTSIDE <em>/ STROKE TELEMETRY</em>
           </button>
           <nav>
             <button className={route.name !== 'rules' ? 'active' : ''} onClick={() => setRoute({ name: 'library' })}>Players</button>
             <button className={route.name === 'rules' ? 'active' : ''} onClick={() => setRoute({ name: 'rules' })}>Coach settings</button>
           </nav>
+          <div className="telemetry" aria-hidden="true">
+            <span className="opt">Pose <b>33 pts</b></span>
+            <span className="opt">Phases <b>6</b></span>
+            <span>Mode <b>Local</b></span>
+            <span>View <b>{VIEW_LABEL[route.name]}</b></span>
+            <span className="live">Ready</span>
+          </div>
         </header>
         <main>
           {route.name === 'library' && <Library initialPlayerId={route.playerId} />}

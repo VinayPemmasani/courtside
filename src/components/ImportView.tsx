@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../App';
 import { analyze, newId } from '../core';
 import { runPose, type ModelSize } from '../pose/poseRunner';
-import { store, type Player, type Session } from '../storage/db';
+import { SESSION_KINDS, store, type Player, type Session, type SessionKind } from '../storage/db';
+import { FilmingGuide } from './FilmingGuide';
 import { fmtTime } from '../labels';
 
 export function ImportView({ playerId }: { playerId: string }) {
@@ -15,6 +16,7 @@ export function ImportView({ playerId }: { playerId: string }) {
   const [fps, setFps] = useState(30);
   const [model, setModel] = useState<ModelSize>('full');
   const [title, setTitle] = useState('');
+  const [kind, setKind] = useState<SessionKind>('rally');
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string>();
   const abort = useRef<AbortController>();
@@ -48,7 +50,7 @@ export function ImportView({ playerId }: { playerId: string }) {
       const session: Session = {
         id: newId('se'), playerId, title: title || 'Session', createdAt: Date.now(),
         fps, start: range[0], end: range[1], duration, width: v.videoWidth, height: v.videoHeight,
-        frames, strokes, tags: ['Technique'], notes: '',
+        frames, strokes, tags: ['Technique'], notes: '', kind,
       };
       await store.saveVideo(session.id, file);
       await store.saveSession(session);
@@ -73,6 +75,7 @@ export function ImportView({ playerId }: { playerId: string }) {
           <small>Best results: one player, whole body in frame, filmed from the side or behind, 60 fps.</small>
         </label>
       )}
+      {!url && <FilmingGuide />}
       {url && (
         <div className="import-grid">
           <video
@@ -96,6 +99,12 @@ export function ImportView({ playerId }: { playerId: string }) {
                 <input type="range" min={0} max={duration} step={0.1} value={range[1]} onChange={(e) => { const v = +e.target.value; setRange([range[0], Math.max(v, range[0] + 0.5)]); if (videoRef.current) videoRef.current.currentTime = v; }} />
               </div>
               <small className="muted">Use the current video position: <button className="link" onClick={() => setRange([videoRef.current!.currentTime, range[1]])}>set start</button> · <button className="link" onClick={() => setRange([range[0], videoRef.current!.currentTime])}>set end</button></small>
+            </label>
+            <label>
+              Session type
+              <div className="seg wrap">
+                {SESSION_KINDS.map((k) => <button key={k.id} title={k.hint} className={kind === k.id ? 'on' : ''} onClick={() => setKind(k.id)}>{k.label}</button>)}
+              </div>
             </label>
             <label>
               Samples per second

@@ -1,0 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Rubik:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Rubik,Arial,sans-serif;color:#EDF3F6;background:#0B1A26;overflow:hidden}
+.disp{font-family:Oswald,Arial,sans-serif;text-transform:uppercase;font-weight:600;line-height:1}
+.lime{color:#D4F04C}
+.kick{letter-spacing:.3em;text-transform:uppercase;font-weight:600;color:#D4F04C}
+.laptop{position:relative}
+.laptop .lid{background:#05080d;border:2px solid #2a3a48;border-radius:22px 22px 6px 6px;padding:18px}
+.laptop .lid img{display:block;width:100%;border-radius:4px}
+.laptop .base{height:26px;margin:0 -7%;background:linear-gradient(#c9d3da,#7d8a94);border-radius:0 0 24px 24px;position:relative}
+.laptop .base:after{content:"";position:absolute;left:42%;right:42%;top:0;height:9px;background:#5e6a73;border-radius:0 0 10px 10px}
+.tablet{background:#05080d;border:2px solid #2a3a48;border-radius:36px;padding:26px}
+.tablet img{display:block;width:100%;border-radius:12px}
+.phone{background:#05080d;border:2px solid #2a3a48;border-radius:52px;padding:14px;position:relative}
+.phone img{display:block;width:100%;border-radius:40px}
+
+.glow{position:absolute;border-radius:50%;filter:blur(120px);opacity:.35;background:#D4F04C}
+.logo{display:flex;align-items:center;gap:16px;font-weight:600}
+.logo img{width:1.3em;height:1.3em}

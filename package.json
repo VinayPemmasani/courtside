@@ -9,10 +9,12 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:web": "tsc && vite build --base ./ && rm -rf site && cp -r website site && cp -r dist site/app"
   },
   "dependencies": {
     "@fontsource/anton": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/space-mono": "^5.3.0",
     "@mediapipe/tasks-vision": "^1.1.1",
     "@tauri-apps/api": "^2.12.4",

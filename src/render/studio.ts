@@ -1,7 +1,7 @@
-import '@fontsource/anton/400.css';
-import '@fontsource/space-mono/700.css';
+import '@fontsource/jetbrains-mono/500.css';
+import '@fontsource/jetbrains-mono/700.css';
 import type { Callout, Handedness } from '../core';
-import { COLORS, roundRect, wrap } from './overlay';
+import { COLORS, MONO, wrap } from './overlay';
 import type { SceneInput, StudioScene } from './scene3d';
 
 /**
@@ -9,7 +9,7 @@ import type { SceneInput, StudioScene } from './scene3d';
  * callout labels pinned to the body, and the weight-transfer gauge.
  */
 
-export const RED = '#ff3b30';
+export const RED = '#ff5c7a';
 
 /** A canvas area to draw on. */
 export interface Surface {
@@ -28,145 +28,198 @@ export interface Headline {
   dots?: { count: number; active: number };
 }
 
-const DISPLAY = 'Anton, Impact, "Arial Narrow", sans-serif';
-const MONO = '"Space Mono", ui-monospace, monospace';
 
 /** Wait for the headline fonts, so the first exported frames are not drawn in a fallback font. */
 export async function loadStudioFonts() {
   if (!document.fonts) return;
-  await Promise.all([document.fonts.load(`400 100px ${DISPLAY}`), document.fonts.load(`700 30px ${MONO}`)]).catch(() => undefined);
+  await Promise.all([document.fonts.load(`700 100px ${MONO}`), document.fonts.load(`500 30px ${MONO}`)]).catch(() => undefined);
 }
+
+/**
+ * Layer scale. Reels are 1080 wide and portrait; in a landscape preview, scaling by width alone
+ * made the headline taller than the frame, so the height caps it too (portrait reels are unchanged).
+ */
+export const studioScale = (W: number, H: number) => Math.min(W / 1080, H / 1500);
 
 export function drawHeadline(v: Surface, h: Headline) {
   const { ctx, W, H } = v;
-  const s = W / 1080;
+  const s = studioScale(W, H);
   const pad = 56 * s;
   const tone = h.tone === 'good' ? COLORS.accent : RED;
   ctx.save();
-  const g = ctx.createLinearGradient(0, 0, 0, H * 0.42);
-  g.addColorStop(0, 'rgba(5,7,11,0.85)');
-  g.addColorStop(1, 'rgba(5,7,11,0)');
+  const g = ctx.createLinearGradient(0, 0, 0, H * 0.4);
+  g.addColorStop(0, 'rgba(5,7,12,0.9)');
+  g.addColorStop(1, 'rgba(5,7,12,0)');
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H * 0.42);
+  ctx.fillRect(0, 0, W, H * 0.4);
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
 
-  let y = 110 * s;
+  // Kicker: "▌ STEP 5 OF 6 | FOREHAND", like a panel label.
+  let y = 104 * s;
   ctx.fillStyle = tone;
-  ctx.fillRect(pad, y - 24 * s, 20 * s, 20 * s);
-  ctx.font = `700 ${30 * s}px ${MONO}`;
-  ctx.fillStyle = 'rgba(235,238,245,0.8)';
-  ctx.fillText(spaced(h.kicker.toUpperCase()), pad + 36 * s, y);
-  if (h.dots) drawDots(ctx, W - pad, y - 14 * s, s, h.dots.count, h.dots.active);
+  ctx.shadowColor = tone;
+  ctx.shadowBlur = 10 * s;
+  ctx.fillRect(pad, y - 26 * s, 5 * s, 30 * s);
+  ctx.shadowBlur = 0;
+  ctx.font = `500 ${26 * s}px ${MONO}`;
+  ctx.fillStyle = 'rgba(217,223,234,0.75)';
+  tracked(ctx, h.kicker.toUpperCase(), pad + 22 * s, y, 5 * s);
+  if (h.dots) drawDots(ctx, W - pad, y - 11 * s, s, h.dots.count, h.dots.active);
 
   const room = W - 2 * pad;
   const big = (text: string, colour: string) => {
-    ctx.font = `400 ${150 * s}px ${DISPLAY}`;
-    const size = Math.min(150 * s, (150 * s * room) / Math.max(1, ctx.measureText(text).width));
-    ctx.font = `400 ${size}px ${DISPLAY}`;
+    ctx.font = `700 ${116 * s}px ${MONO}`;
+    const size = Math.min(116 * s, (116 * s * room) / Math.max(1, ctx.measureText(text).width));
+    ctx.font = `700 ${size}px ${MONO}`;
     ctx.fillStyle = colour;
-    y += size * 1.0;
+    y += size * 1.02;
     ctx.fillText(text, pad - 4 * s, y);
   };
-  y += 14 * s;
-  big(h.line1.toUpperCase(), '#f4f4f0');
-  if (h.line2) big(h.line2.toUpperCase(), tone);
+  y += 22 * s;
+  big(h.line1.toUpperCase(), '#ffffff');
+  if (h.line2) {
+    ctx.shadowColor = tone;
+    ctx.shadowBlur = 24 * s;
+    big(h.line2.toUpperCase(), tone);
+    ctx.shadowBlur = 0;
+  }
   if (h.subtitle) {
-    ctx.font = `600 ${40 * s}px Inter, system-ui, sans-serif`;
-    ctx.fillStyle = 'rgba(244,244,240,0.88)';
-    y += 30 * s;
+    ctx.font = `500 ${32 * s}px ${MONO}`;
+    ctx.fillStyle = 'rgba(217,223,234,0.85)';
+    y += 22 * s;
     for (const line of wrap(ctx, h.subtitle, room).slice(0, 2)) {
-      y += 48 * s;
+      y += 44 * s;
       ctx.fillText(line, pad, y);
     }
   }
+  // Hairline under the block.
+  ctx.fillStyle = 'rgba(42,50,69,0.9)';
+  ctx.fillRect(pad, y + 26 * s, room, Math.max(1, 1.5 * s));
   ctx.restore();
 }
 
-/** Letter-spacing for the monospace kicker, which canvas cannot do everywhere. */
-const spaced = (t: string) => t.split('').join(' ');
+/** Tracked-out caps for labels: canvas letterSpacing where the browser has it, plain text otherwise. */
+function tracked(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, px: number) {
+  const c = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
+  if ('letterSpacing' in c) {
+    ctx.save();
+    c.letterSpacing = `${px}px`;
+    // Letter spacing adds trailing space; pull right-aligned text back by one step.
+    ctx.fillText(text, ctx.textAlign === 'right' ? x + px : x, y);
+    ctx.restore();
+    c.letterSpacing = '0px';
+  } else ctx.fillText(text, x, y);
+}
 
+/** Phase progress as square segments; the live one is longer and lit. */
 function drawDots(ctx: CanvasRenderingContext2D, right: number, y: number, s: number, count: number, active: number) {
-  const r = 7 * s, gap = 10 * s, pill = 44 * s;
-  let x = right - (count - 1) * (2 * r + gap) - pill;
+  const r = 10 * s, gap = 6 * s, long = 36 * s;
+  let x = right - (count - 1) * (r + gap) - long;
   for (let i = 0; i < count; i++) {
-    const w = i === active ? pill : 2 * r;
-    ctx.fillStyle = i === active ? COLORS.accent : 'rgba(255,255,255,0.4)';
-    roundRect(ctx, x, y - r, w, 2 * r, r);
-    ctx.fill();
+    const w = i === active ? long : r;
+    ctx.fillStyle = i === active ? COLORS.accent : i < active ? 'rgba(217,223,234,0.7)' : 'rgba(217,223,234,0.2)';
+    ctx.fillRect(x, y - r / 2, w, r);
     x += w + gap;
   }
 }
 
-/** Callout chips pinned to the 3D body: a leader from the joint (where the ring is) to the label. */
+/** Callout chips pinned to the 3D body: a reticle on the joint, a leader, and a bordered mono label. */
 export function drawPinnedLabels(v: Surface, scene: StudioScene, callouts: Callout[], hand: Handedness) {
   const { ctx, W, H } = v;
-  const s = W / 1080;
+  const s = studioScale(W, H);
   ctx.save();
-  ctx.font = `700 ${30 * s}px Inter, system-ui, sans-serif`;
+  ctx.font = `700 ${26 * s}px ${MONO}`;
   ctx.textBaseline = 'middle';
-  ctx.textAlign = 'center';
+  ctx.textAlign = 'left';
   for (const c of callouts) {
     if (c.hidden) continue;
     const a = scene.projectAnchor(c.anchor, hand);
     if (!a) continue;
     const colour = c.status === 'fix' ? RED : COLORS.accent;
     const text = c.label.toUpperCase();
-    const w = ctx.measureText(text).width + 34 * s;
-    const h = 54 * s;
+    const w = ctx.measureText(text).width + 40 * s;
+    const h = 50 * s;
     const lx = Math.max(w / 2 + 12 * s, Math.min(W - w / 2 - 12 * s, a.x + c.dx * H * 0.8));
     const ly = Math.max(H * 0.36, Math.min(H - h - 230 * s, a.y + c.dy * H * 0.8));
     ctx.strokeStyle = colour;
-    ctx.lineWidth = 3 * s;
+    ctx.fillStyle = colour;
     ctx.shadowColor = colour;
-    ctx.shadowBlur = 10 * s;
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(lx, ly); ctx.stroke();
-    ctx.beginPath(); ctx.arc(a.x, a.y, 6 * s, 0, Math.PI * 2); ctx.fillStyle = colour; ctx.fill();
+    ctx.shadowBlur = 8 * s;
+    // Reticle.
+    const r = 14 * s;
+    ctx.lineWidth = 2 * s;
+    ctx.beginPath(); ctx.arc(a.x, a.y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      ctx.moveTo(a.x + dx * (r - 5 * s), a.y + dy * (r - 5 * s));
+      ctx.lineTo(a.x + dx * (r + 7 * s), a.y + dy * (r + 7 * s));
+    }
+    ctx.stroke();
+    // Leader: out from the ring to the nearest edge of the chip.
+    const ang = Math.atan2(ly - a.y, lx - a.x);
+    const ex = Math.max(lx - w / 2, Math.min(lx + w / 2, a.x));
+    const ey = Math.abs(lx - a.x) > w / 2 ? ly : ly + (a.y < ly ? -h / 2 : h / 2);
+    ctx.lineWidth = 1.5 * s;
+    ctx.beginPath(); ctx.moveTo(a.x + Math.cos(ang) * r, a.y + Math.sin(ang) * r); ctx.lineTo(ex, ey); ctx.stroke();
     ctx.shadowBlur = 0;
-    roundRect(ctx, lx - w / 2, ly - h / 2, w, h, 8 * s);
-    ctx.fill();
-    ctx.fillStyle = c.status === 'fix' ? '#ffffff' : COLORS.ink;
-    ctx.fillText(text, lx, ly + 2 * s);
+    ctx.fillStyle = 'rgba(5,7,12,0.88)';
+    ctx.fillRect(lx - w / 2, ly - h / 2, w, h);
+    ctx.lineWidth = 1.5 * s;
+    ctx.strokeRect(lx - w / 2, ly - h / 2, w, h);
+    ctx.fillStyle = colour;
+    ctx.fillRect(lx - w / 2, ly - h / 2, 6 * s, h);
+    ctx.fillText(text, lx - w / 2 + 22 * s, ly + 2 * s);
   }
   ctx.restore();
 }
 
-/** "WEIGHT TRANSFER" bar along the bottom: back foot to front foot, with the share in front. */
+/** "WEIGHT TRANSFER" readout along the bottom: back foot to front foot, with the share in front. */
 export function drawWeightGauge(v: Surface, share: number | null) {
   if (share === null) return;
   const { ctx, W, H } = v;
-  const s = W / 1080;
+  const s = studioScale(W, H);
   const pad = 56 * s;
-  const y = H - 170 * s;
-  const barH = 18 * s;
+  const y = H - 160 * s;
+  const barH = 10 * s;
+  const bw = W - 2 * pad;
   ctx.save();
-  ctx.fillStyle = 'rgba(5,7,13,0.65)';
-  roundRect(ctx, pad - 20 * s, y - 64 * s, W - 2 * pad + 40 * s, 130 * s, 18 * s);
-  ctx.fill();
-  ctx.font = `700 ${24 * s}px ${MONO}`;
+  // Hairline panel.
+  ctx.fillStyle = 'rgba(8,11,18,0.82)';
+  ctx.fillRect(pad - 20 * s, y - 66 * s, bw + 40 * s, 128 * s);
+  ctx.strokeStyle = 'rgba(42,50,69,0.95)';
+  ctx.lineWidth = Math.max(1, 1.5 * s);
+  ctx.strokeRect(pad - 20 * s, y - 66 * s, bw + 40 * s, 128 * s);
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = `500 ${20 * s}px ${MONO}`;
+  ctx.fillStyle = 'rgba(122,132,153,1)';
   ctx.textAlign = 'left';
-  ctx.fillText(spaced('WEIGHT TRANSFER'), pad, y - 22 * s);
+  tracked(ctx, 'WEIGHT TRANSFER', pad, y - 24 * s, 4 * s);
   ctx.textAlign = 'right';
   ctx.fillStyle = COLORS.accent;
-  ctx.font = `400 ${40 * s}px ${DISPLAY}`;
-  ctx.fillText(`${Math.round(share * 100)}% FRONT FOOT`, W - pad, y - 18 * s);
-  ctx.fillStyle = 'rgba(255,255,255,0.18)';
-  roundRect(ctx, pad, y, W - 2 * pad, barH, barH / 2);
-  ctx.fill();
+  ctx.font = `700 ${34 * s}px ${MONO}`;
+  ctx.fillText(`${Math.round(share * 100)}%`, W - pad - 138 * s, y - 20 * s);
+  ctx.font = `500 ${20 * s}px ${MONO}`;
+  ctx.fillStyle = 'rgba(217,223,234,0.8)';
+  ctx.fillText('FRONT FOOT', W - pad, y - 22 * s);
+  // Track with quarter ticks, then the lit share.
+  ctx.fillStyle = 'rgba(42,50,69,0.95)';
+  ctx.fillRect(pad, y, bw, barH);
   ctx.fillStyle = COLORS.accent;
   ctx.shadowColor = COLORS.accent;
   ctx.shadowBlur = 12 * s;
-  roundRect(ctx, pad, y, Math.max(barH, (W - 2 * pad) * share), barH, barH / 2);
-  ctx.fill();
+  ctx.fillRect(pad, y, Math.max(barH, bw * share), barH);
   ctx.shadowBlur = 0;
-  ctx.font = `700 ${20 * s}px ${MONO}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillStyle = 'rgba(122,132,153,0.9)';
+  for (const q of [0, 0.25, 0.5, 0.75, 1]) ctx.fillRect(pad + bw * q - (q === 1 ? 2 * s : 0), y + barH + 4 * s, 2 * s, q === 0.5 ? 12 * s : 7 * s);
+  ctx.font = `500 ${17 * s}px ${MONO}`;
+  ctx.fillStyle = 'rgba(122,132,153,1)';
   ctx.textAlign = 'left';
-  ctx.fillText('BACK FOOT', pad, y + barH + 30 * s);
+  ctx.fillText('BACK', pad, y + barH + 40 * s);
+  ctx.textAlign = 'center';
+  ctx.fillText('50 / 50', pad + bw / 2, y + barH + 40 * s);
   ctx.textAlign = 'right';
-  ctx.fillText('FRONT FOOT', W - pad, y + barH + 30 * s);
+  ctx.fillText('FRONT', W - pad, y + barH + 40 * s);
   ctx.restore();
 }
 
