@@ -14,8 +14,8 @@ import {
  * standing on a dark wireframe court with glowing lines, ball and highlight rings.
  */
 
-const NEON = new THREE.Color(1.5, 1.95, 0.5); // #d4f04c pushed past 1 so it blooms
-const RED = new THREE.Color(2.2, 0.32, 0.28);
+const NEON = new THREE.Color(2.0, 1.4, 0.45); // amber #f5b544 pushed past 1 so it blooms
+const RED = new THREE.Color(2.2, 0.42, 0.7); // rose #ff5c7a, bloomed
 const LINE = new THREE.Color(1.02, 1.05, 1.12);
 const BALL = new THREE.Color(2.2, 2.5, 0.6);
 
@@ -192,10 +192,10 @@ export class StudioScene {
     sc.left = -4; sc.right = 4; sc.top = 4; sc.bottom = -4; sc.near = 1; sc.far = 40;
     key.target.position.set(1, 0, 12);
     this.scene.add(key, key.target);
-    const rim = new THREE.DirectionalLight('#9fb8ff', 1.4);
+    const rim = new THREE.DirectionalLight('#9d8cff', 1.4);
     rim.position.set(3, 4, 0);
     this.scene.add(rim);
-    const under = new THREE.PointLight('#ff3b30', 1.6, 2.5, 2);
+    const under = new THREE.PointLight('#ff5c7a', 1.6, 2.5, 2);
     under.position.set(1, 0.3, 12.6);
     under.name = 'under';
     this.scene.add(under);

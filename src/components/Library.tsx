@@ -103,6 +103,7 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
                 <button className="primary" onClick={() => go({ name: 'import', playerId: player.id })}>New analysis</button>
               </div>
             </div>
+            {sessions.length > 0 && <Readouts sessions={sessions} />}
             {sessions.length === 0 && (
               <div className="empty small">
                 <p>No sessions yet. Film one player from the side or from behind, at 60 fps if your phone allows, and import the clip.</p>
@@ -153,6 +154,34 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
           </>
         )}
       </section>
+    </div>
+  );
+}
+
+const MIX_COLORS: Record<string, string> = { forehand: 'var(--accent)', backhand: 'var(--violet)', serve: 'var(--teal)' };
+
+/** Telemetry strip: totals across the player's sessions and the stroke mix. */
+function Readouts({ sessions }: { sessions: SessionSummary[] }) {
+  const strokes = sessions.flatMap((s) => s.strokes);
+  const fixes = strokes.filter((s) => topFix(s)).length;
+  const bounces = sessions.reduce((n, s) => n + (s.bounces?.length ?? 0), 0);
+  const counts = strokes.reduce<Record<string, number>>((acc, st) => {
+    const k = st.type.startsWith('backhand') ? 'backhand' : st.type;
+    return { ...acc, [k]: (acc[k] ?? 0) + 1 };
+  }, {});
+  return (
+    <div className="readouts">
+      <div><span>Sessions</span><strong>{sessions.length}</strong></div>
+      <div><span>Strokes tracked</span><strong className="a">{strokes.length}</strong></div>
+      <div><span>Fixes flagged</span><strong className="r">{fixes}</strong></div>
+      <div><span>Clean strokes</span><strong className="t">{strokes.length ? Math.round(((strokes.length - fixes) / strokes.length) * 100) : 0}%</strong></div>
+      <div><span>Bounces called</span><strong className="v">{bounces}</strong></div>
+      <div>
+        <span>Stroke mix</span>
+        <div className="mix" title={Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(' · ')}>
+          {Object.entries(counts).map(([k, n]) => <i key={k} style={{ width: `${(n / Math.max(1, strokes.length)) * 100}%`, background: MIX_COLORS[k] ?? 'var(--line-2)' }} />)}
+        </div>
+      </div>
     </div>
   );
 }

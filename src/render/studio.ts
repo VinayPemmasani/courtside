@@ -9,7 +9,7 @@ import type { SceneInput, StudioScene } from './scene3d';
  * callout labels pinned to the body, and the weight-transfer gauge.
  */
 
-export const RED = '#ff3b30';
+export const RED = '#ff5c7a';
 
 /** A canvas area to draw on. */
 export interface Surface {

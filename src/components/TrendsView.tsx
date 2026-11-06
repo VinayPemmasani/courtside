@@ -28,6 +28,8 @@ function Spark({ pts, rule }: { pts: Point[]; rule: Rule }) {
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="spark" role="img" aria-label={`${METRIC_INFO[rule.metric].label} over sessions`}>
       <rect x={0} y={bandTop} width={W} height={Math.max(0, bandBot - bandTop)} className="band" />
+      {rule.max !== undefined && <line x1={0} x2={W} y1={bandTop} y2={bandTop} className="bandline" />}
+      {rule.min !== undefined && <line x1={0} x2={W} y1={bandBot} y2={bandBot} className="bandline" />}
       <polyline points={pts.map((p, i) => `${x(i)},${y(p.v)}`).join(' ')} className="line" />
       {pts.map((p, i) => <circle key={i} cx={x(i)} cy={y(p.v)} r={3.5} className="pt"><title>{`${p.label}: ${formatMetric(rule.metric, p.v)}`}</title></circle>)}
     </svg>
@@ -62,7 +64,7 @@ export function TrendsView({ playerId }: { playerId: string }) {
               const inRange = (r.min === undefined || last.v >= r.min) && (r.max === undefined || last.v <= r.max);
               return (
                 <div key={r.id} className="trend-card">
-                  <h4>{METRIC_INFO[r.metric].label} <small className="muted">at {PHASE_LABEL[r.phase].toLowerCase()}</small></h4>
+                  <h4>{METRIC_INFO[r.metric].label} <small className="muted">{PHASE_LABEL[r.phase]}</small></h4>
                   <p className={`big ${inRange ? 'good' : 'fix'}`}>{formatMetric(r.metric, last.v)}</p>
                   <Spark pts={pts} rule={r} />
                   <p className="muted small">{pts.length} session{pts.length === 1 ? '' : 's'} · latest {fmtDate(last.t)}</p>
