@@ -14,10 +14,12 @@ import {
  * standing on a dark wireframe court with glowing lines, ball and highlight rings.
  */
 
-const NEON = new THREE.Color(2.0, 1.4, 0.45); // amber #f5b544 pushed past 1 so it blooms
+const NEON = new THREE.Color(1.35, 0.85, 0.22); // amber #f5b544 pushed past 1 so it blooms
 const RED = new THREE.Color(2.2, 0.42, 0.7); // rose #ff5c7a, bloomed
-const LINE = new THREE.Color(1.02, 1.05, 1.12);
-const BALL = new THREE.Color(2.2, 2.5, 0.6);
+const LINE = new THREE.Color(0.16, 0.6, 0.55); // teal court lines, just under bloom
+const NET = new THREE.Color(0.85, 0.89, 0.98);
+const VIOLET = new THREE.Color(0.75, 0.62, 1.6); // ball flight, bloomed
+const BALL = new THREE.Color(1.15, 1.35, 0.35);
 
 export interface Ring {
   anchor: AnchorJoint;
@@ -80,15 +82,15 @@ export class StudioScene {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environmentIntensity = 0.3;
-    this.scene.background = new THREE.Color('#05070b');
-    this.scene.fog = new THREE.Fog('#05070b', 16, 42);
+    this.scene.background = new THREE.Color('#05070c');
+    this.scene.fog = new THREE.Fog('#05070c', 14, 38);
 
     this.buildCourt();
     this.buildLights();
 
     // Mannequin: tapered limbs with ball joints, shaped torso and head.
-    const skin = new THREE.MeshStandardMaterial({ color: '#dcdcd7', roughness: 0.36, metalness: 0.04 });
-    const jointMat = new THREE.MeshStandardMaterial({ color: '#c3c3be', roughness: 0.42, metalness: 0.04 });
+    const skin = new THREE.MeshStandardMaterial({ color: '#cfd4de', roughness: 0.42, metalness: 0.04 });
+    const jointMat = new THREE.MeshStandardMaterial({ color: '#9ea4b3', roughness: 0.5, metalness: 0.04 });
     const limb = (a: number, b: number, rTop: number, rBottom: number) => {
       const g = new THREE.CylinderGeometry(rBottom, rTop, 1, 20, 1);
       g.translate(0, 0.5, 0);
@@ -130,22 +132,23 @@ export class StudioScene {
     shaft.name = 'shaft';
     const frame = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 10, 48), new THREE.MeshBasicMaterial({ color: NEON, toneMapped: false }));
     frame.name = 'frame';
-    const strings = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 0.75, 0.25), transparent: true, opacity: 0.22, side: THREE.DoubleSide, toneMapped: false }));
+    const strings = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.95, 0.7, 0.28), transparent: true, opacity: 0.16, side: THREE.DoubleSide, toneMapped: false }));
     strings.name = 'strings';
     this.racket.add(shaft, frame, strings);
     this.scene.add(this.racket);
 
     this.ball = new THREE.Mesh(new THREE.SphereGeometry(0.075, 24, 16), new THREE.MeshBasicMaterial({ color: BALL, toneMapped: false }));
-    this.ballLight = new THREE.PointLight(new THREE.Color('#e9ff6a'), 4, 3, 2);
+    this.ballLight = new THREE.PointLight(new THREE.Color('#e9ff6a'), 1.6, 2, 2);
     this.scene.add(this.ball, this.ballLight);
 
-    // Red floor glow under the player, and a glow under each foot for the weight split.
-    this.glow = this.floorGlow('255,60,50', 1.7, 0.4);
-    this.footGlow = [this.floorGlow('212,240,76', 0.7, 1), this.floorGlow('212,240,76', 0.7, 1)];
+    // Soft violet pool under the player, and an amber glow under each foot for the weight split.
+    this.glow = this.floorGlow('157,140,255', 1.6, 0.22);
+    this.footGlow = [this.floorGlow('245,181,68', 0.6, 0.55), this.floorGlow('245,181,68', 0.6, 0.55)];
 
-    this.composer = new EffectComposer(this.renderer);
+    // Multisampled target: thin court lines stay solid instead of breaking into dashes at a distance.
+    this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(width, height, { samples: 4, type: THREE.HalfFloatType }));
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.5, 0.3, 1.08);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.38, 0.25, 1.05);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.setSize(width, height);
@@ -183,31 +186,41 @@ export class StudioScene {
   }
 
   private buildLights() {
-    this.scene.add(new THREE.HemisphereLight('#c8d6ff', '#0b0d12', 0.55));
-    const key = new THREE.DirectionalLight('#ffffff', 1.7);
+    this.scene.add(new THREE.HemisphereLight('#c8d0ff', '#05070c', 0.45));
+    const key = new THREE.DirectionalLight('#ffffff', 1.5);
     key.position.set(-4, 9, 18);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
+    key.shadow.bias = -0.0004;
+    key.shadow.normalBias = 0.02;
     const sc = key.shadow.camera;
     sc.left = -4; sc.right = 4; sc.top = 4; sc.bottom = -4; sc.near = 1; sc.far = 40;
     key.target.position.set(1, 0, 12);
     this.scene.add(key, key.target);
-    const rim = new THREE.DirectionalLight('#9d8cff', 1.4);
+    const rim = new THREE.DirectionalLight('#9d8cff', 1.8);
     rim.position.set(3, 4, 0);
     this.scene.add(rim);
-    const under = new THREE.PointLight('#ff5c7a', 1.6, 2.5, 2);
+    const under = new THREE.PointLight('#9d8cff', 0.7, 2.5, 2);
     under.position.set(1, 0.3, 12.6);
     under.name = 'under';
     this.scene.add(under);
   }
 
   private buildCourt() {
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), new THREE.MeshStandardMaterial({ color: '#0a0d13', roughness: 0.85, metalness: 0 }));
+    // An unlit near-black floor, so the court reads like the app's dark panels, with shadows laid on a separate catcher.
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), new THREE.MeshBasicMaterial({ color: '#07090f' }));
     floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
     this.scene.add(floor);
-    const grid = new THREE.GridHelper(80, 80, '#1d2735', '#151c27');
+    const shadows = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.6 }));
+    shadows.rotation.x = -Math.PI / 2;
+    shadows.position.y = 0.001;
+    shadows.receiveShadow = true;
+    this.scene.add(shadows);
+    const grid = new THREE.GridHelper(80, 80, '#1b2232', '#121826');
     grid.position.y = 0.002;
+    const gm = grid.material as THREE.LineBasicMaterial;
+    gm.transparent = true;
+    gm.opacity = 0.55;
     this.scene.add(grid);
 
     const lineMat = new THREE.MeshBasicMaterial({ color: LINE, toneMapped: false });
@@ -226,7 +239,7 @@ export class StudioScene {
     line(0, L, 0, L - 0.15); line(0, -L, 0, -L + 0.15);
 
     // Net: posts, a glowing top band, and a faint mesh.
-    const post = new THREE.MeshBasicMaterial({ color: LINE, toneMapped: false });
+    const post = new THREE.MeshBasicMaterial({ color: NET, toneMapped: false });
     for (const x of [-(D + 0.9), D + 0.9]) {
       const p = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, COURT.netPost, 8), post);
       p.position.set(x, COURT.netPost / 2, 0);
@@ -239,7 +252,7 @@ export class StudioScene {
     const w = D + 0.9;
     for (let x = -w; x <= w + 1e-6; x += 0.25) pts.push(new THREE.Vector3(x, 0, 0), new THREE.Vector3(x, COURT.net, 0));
     for (let y = 0; y <= COURT.net + 1e-6; y += 0.15) pts.push(new THREE.Vector3(-w, y, 0), new THREE.Vector3(w, y, 0));
-    const mesh = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#8b97ab', transparent: true, opacity: 0.22 }));
+    const mesh = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#6c768b', transparent: true, opacity: 0.16 }));
     this.scene.add(mesh);
   }
 
@@ -387,7 +400,7 @@ export class StudioScene {
       if (p) pts.push(v3(p));
     }
     if (pts.length < 3) return;
-    this.trail = tube(pts, 0.022, RED);
+    this.trail = tube(pts, 0.016, VIOLET);
     this.scene.add(this.trail);
   }
 
@@ -400,7 +413,7 @@ export class StudioScene {
       const idx = anchorIndices(r.anchor, input.hand, deeperKnee(w));
       const c = idx.map(P).reduce((s, p) => s.add(p), new THREE.Vector3()).multiplyScalar(1 / idx.length);
       const big = r.anchor === 'shoulders' || r.anchor === 'hips';
-      const m = new THREE.Mesh(new THREE.TorusGeometry(big ? 0.34 : 0.16, 0.012, 8, 64), new THREE.MeshBasicMaterial({ color: r.status === 'fix' ? RED : NEON, toneMapped: false }));
+      const m = new THREE.Mesh(new THREE.TorusGeometry(big ? 0.34 : 0.16, 0.008, 8, 64), new THREE.MeshBasicMaterial({ color: r.status === 'fix' ? RED : NEON, toneMapped: false }));
       m.position.copy(c);
       m.rotation.x = Math.PI / 2;
       this.scene.add(m);
@@ -423,8 +436,8 @@ export class StudioScene {
       const ankle = P(k === 0 ? wt!.front : wt!.back);
       const amount = k === 0 ? share! : 1 - share!;
       g.position.set(ankle.x, 0.006, ankle.z);
-      g.scale.setScalar(0.35 + 0.9 * amount);
-      (g.material as THREE.MeshBasicMaterial).opacity = 0.25 + 0.75 * amount;
+      g.scale.setScalar(0.35 + 0.7 * amount);
+      (g.material as THREE.MeshBasicMaterial).opacity = 0.2 + 0.6 * amount;
     });
   }
 
