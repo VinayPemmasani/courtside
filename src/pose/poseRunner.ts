@@ -5,9 +5,29 @@ export type ModelSize = 'full' | 'lite';
 
 let cached: { size: ModelSize; landmarker: PoseLandmarker } | null = null;
 
+/**
+ * MediaPipe's VIDEO mode keeps graph state between calls and rejects any
+ * timestamp that is not strictly greater than the last one it saw. The
+ * landmarker is cached and reused across videos (and across re-analysing the
+ * same clip from an earlier start time), so timestamps derived from the
+ * video position alone can go backwards. Keep one clock per landmarker that
+ * only ever moves forward.
+ */
+let lastTimestampMs = -1;
+
+export function nextTimestamp(lastMs: number, videoTimeSec: number, offsetMs: number): number {
+  return Math.max(lastMs + 1, offsetMs + Math.round(videoTimeSec * 1000));
+}
+
+function dropLandmarker() {
+  try { cached?.landmarker.close(); } catch { /* already broken */ }
+  cached = null;
+  lastTimestampMs = -1;
+}
+
 async function getLandmarker(size: ModelSize): Promise<PoseLandmarker> {
   if (cached?.size === size) return cached.landmarker;
-  cached?.landmarker.close();
+  dropLandmarker();
   const base = import.meta.env.BASE_URL;
   const vision = await FilesetResolver.forVisionTasks(`${base}mediapipe/wasm`);
   const make = (delegate: 'GPU' | 'CPU') =>
@@ -71,14 +91,23 @@ export async function runPose(url: string, opts: PoseRunOptions): Promise<PoseFr
   const end = Math.min(opts.end, video.duration);
   const total = Math.max(1, Math.floor((end - opts.start) * opts.fps) + 1);
   const frames: PoseFrame[] = [];
-  let lastTs = -1;
+  // Continue this run's timeline after wherever the landmarker's clock left off.
+  const offsetMs = lastTimestampMs + 1 - Math.round(opts.start * 1000);
   for (let i = 0; i < total; i++) {
     if (opts.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     const t = opts.start + i / opts.fps;
     await seek(video, t);
-    const ts = Math.max(lastTs + 1, Math.round(t * 1000));
-    lastTs = ts;
-    const res = landmarker.detectForVideo(video, ts);
+    if (opts.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    const ts = nextTimestamp(lastTimestampMs, t, offsetMs);
+    lastTimestampMs = ts;
+    let res;
+    try {
+      res = landmarker.detectForVideo(video, ts);
+    } catch (err) {
+      // A failed graph can stay wedged; start fresh next time.
+      dropLandmarker();
+      throw err;
+    }
     const img = res.landmarks[0];
     const world = res.worldLandmarks[0];
     frames.push({
