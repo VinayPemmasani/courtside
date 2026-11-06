@@ -278,6 +278,27 @@ export function drawHeader(v: View, opts: { index: number; title: string; subtit
   ctx.fillText('ANALYZED BY COURTSIDE  |  STROKE TELEMETRY', pad, y + 6 * s);
 }
 
+/** Video timestamp pill in the bottom-left corner, so a viewer can find the exact frame in the clip. */
+export function drawTimecode(v: View, text: string) {
+  const { ctx, W, H } = v;
+  const s = W / 1080;
+  const fs = Math.max(11, 30 * s);
+  ctx.font = `700 ${fs}px ${MONO}`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const padX = fs * 0.6;
+  const w = ctx.measureText(text).width + 2 * padX;
+  const h = fs * 1.7;
+  const x = 40 * s;
+  const y = H - h - 40 * s;
+  ctx.fillStyle = 'rgba(5,7,13,0.8)';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = COLORS.accent;
+  ctx.fillRect(x, y, Math.max(2, 4 * s), h);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, x + padX, y + h / 2);
+  ctx.textBaseline = 'alphabetic';
+}
 
 export function wrap(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
   const words = text.split(/\s+/);

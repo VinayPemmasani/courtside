@@ -2,10 +2,10 @@ import JSZip from 'jszip';
 import { BufferTarget, CanvasSource, canEncodeVideo, Mp4OutputFormat, Output } from 'mediabunny';
 import { jsPDF } from 'jspdf';
 import { formatMetric, METRIC_INFO, topFix, type Handedness, type Phase, type PoseFrame, type Stroke } from '../core';
-import { STROKE_LABEL } from '../labels';
+import { STROKE_LABEL, fmtStamp } from '../labels';
 import type { Player, Session } from '../storage/db';
 import { FrameGrabber } from './grabber';
-import { cropAround, drawCallouts, drawHeader, drawSkeleton, drawTrail, drawVideo, type View } from './overlay';
+import { cropAround, drawCallouts, drawHeader, drawTimecode, drawSkeleton, drawTrail, drawVideo, type View } from './overlay';
 import { saveFile, slug } from './files';
 
 export interface CardContext {
@@ -22,6 +22,9 @@ export function phaseSubtitle(stroke: Stroke, phase: Phase): string | undefined 
   const kps = stroke.keyPoints.filter((k) => k.phaseId === phase.id);
   return (kps.find((k) => k.status === 'fix') ?? kps[0])?.text;
 }
+
+/** "0:04.27 · frame 128": where a phase sits in the original video. */
+export const phaseStamp = (s: Session, phase: Phase) => `${fmtStamp(frameTime(s, phase.frame))} · frame ${phase.frame + 1}`;
 
 export async function renderCard(ctx: CardContext, stroke: Stroke, phase: Phase, W: number, H: number, opts: { header?: boolean } = {}): Promise<HTMLCanvasElement> {
   const canvas = document.createElement('canvas');
@@ -43,6 +46,7 @@ export async function renderCard(ctx: CardContext, stroke: Stroke, phase: Phase,
         subtitle: phaseSubtitle(stroke, phase),
         kicker: `${ctx.player.name} · ${STROKE_LABEL[stroke.type]}`,
       });
+      drawTimecode(view, phaseStamp(ctx.session, phase));
     }
   });
   return canvas;
@@ -95,7 +99,7 @@ export async function exportPdf(ctx: CardContext, stroke: Stroke, onProgress?: (
     for (const k of stroke.keyPoints.filter((x) => x.phaseId === p.id)) {
       if (y > ph - m) { pdf.addPage(); y = m; }
       const mark = k.status === 'fix' ? 'Fix' : k.status === 'good' ? 'Good' : 'Note';
-      y = textBlock(pdf, `${p.index} ${p.label} · ${mark}: ${k.text}${measured(k)}`, m, y, pw - 2 * m);
+      y = textBlock(pdf, `${p.index} ${p.label} @ ${fmtStamp(frameTime(ctx.session, p.frame))} · ${mark}: ${k.text}${measured(k)}`, m, y, pw - 2 * m);
       y += 4;
     }
   }
@@ -114,6 +118,9 @@ export async function exportPdf(ctx: CardContext, stroke: Stroke, onProgress?: (
     const w = (imgH * 1080) / 1350;
     pdf.addImage(await toDataUrl(card), 'JPEG', (pw - w) / 2, m, w, imgH);
     let yy = m + imgH + 26;
+    pdf.setTextColor(110, 110, 110);
+    pdf.text(`${p.index} ${p.label} · ${phaseStamp(ctx.session, p)}`, m, yy);
+    yy += 22;
     for (const k of stroke.keyPoints.filter((x) => x.phaseId === p.id)) {
       pdf.setTextColor(k.status === 'fix' ? 200 : 60, k.status === 'fix' ? 80 : 120, 60);
       pdf.text(k.status === 'fix' ? 'Fix' : 'Good', m, yy);

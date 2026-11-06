@@ -4,7 +4,7 @@ import {
   checkSetup, formatMetric, METRIC_INFO, movePhase, strokeForBounce, type Lines, type Vec2, newId, prepare, retypeStroke, shareAt, strokeAt, topFix, weightTransfer,
   type AnchorJoint, type Callout, type KeyPoint, type Phase, type Stroke, type StrokeType,
 } from '../core';
-import { STROKE_LABEL, STROKE_TYPES, fmtTime } from '../labels';
+import { STROKE_LABEL, STROKE_TYPES, fmtStamp, fmtTime } from '../labels';
 import { SESSION_KINDS, store, TAGS, type Player, type Session, type SessionKind } from '../storage/db';
 import { placeBounces, sessionBundle, sessionCsv } from '../storage/share';
 import { saveFile, slug } from '../render/files';
@@ -321,6 +321,13 @@ export function SessionView({ id }: { id: string }) {
   };
   const exportCsv = () => saveFile(new Blob([sessionCsv(session, player)], { type: 'text/csv' }), `${slug(player.name)}-${slug(session.title)}.csv`, [{ name: 'CSV', extensions: ['csv'] }]);
 
+  const phaseOf = (pid: Phase['id']) => stroke?.phases.find((p) => p.id === pid);
+  /** Clickable timestamp that jumps the video to a phase frame. */
+  const stamp = (p: Phase, label?: string) => (
+    <button className={`stamp ${phaseHere?.id === p.id ? 'on' : ''}`} title={`Jump to ${p.label} (frame ${p.frame + 1})`} onClick={(e) => { e.stopPropagation(); seekFrame(p.frame); }}>
+      <span aria-hidden>▶</span>{fmtStamp(frameToTime(p.frame))}{label && <em>{label}</em>}
+    </button>
+  );
   const phaseKps = (pid: Phase['id']) => stroke?.keyPoints.filter((k) => k.phaseId === pid) ?? [];
   const phaseCos = (pid: Phase['id']) => stroke?.callouts.filter((c) => c.phaseId === pid) ?? [];
   const insideStroke = stroke && frame >= stroke.startFrame && frame <= stroke.endFrame;
@@ -420,7 +427,7 @@ export function SessionView({ id }: { id: string }) {
               ))}
             </div>
             {stroke && <button onClick={() => playStroke(stroke)}>Play stroke in slow motion</button>}
-            <span className="time">{fmtTime(frameToTime(frame))} · frame {frame + 1}/{nFrames}</span>
+            <span className="time">{fmtStamp(frameToTime(frame))} · frame {frame + 1}/{nFrames}</span>
           </div>
 
           <div className="scrubber">
@@ -440,7 +447,7 @@ export function SessionView({ id }: { id: string }) {
                 const src = thumbs[thumbKey(stroke, p)];
                 return (
                   <button key={p.id} className={`phase-card ${phaseHere?.id === p.id ? 'on' : ''}`} onClick={() => seekFrame(p.frame)}>
-                    <div className="thumb">{src ? <img src={src} alt="" /> : <div className="ph" />}</div>
+                    <div className="thumb">{src ? <img src={src} alt="" /> : <div className="ph" />}<span className="tc">{fmtStamp(frameToTime(p.frame))}</span></div>
                     <div className="cap"><span className="num">{p.index}</span>{p.label}<i className={fix ? 'dot fix' : 'dot good'} /></div>
                   </button>
                 );
@@ -488,7 +495,7 @@ export function SessionView({ id }: { id: string }) {
                     const here = phaseHere?.id === p.id;
                     return (
                       <div key={p.id} className={here ? 'here' : fix ? 'fix' : 'good'} onClick={() => seekFrame(p.frame)}>
-                        <span>{String(p.index).padStart(2, '0')}</span>{p.label}<i />
+                        <span>{String(p.index).padStart(2, '0')}</span>{p.label}<small className="ts">{fmtStamp(frameToTime(p.frame))}</small><i />
                         <em>{here ? 'Live' : fix ? 'Fix' : 'Done'}</em>
                       </div>
                     );
@@ -507,7 +514,7 @@ export function SessionView({ id }: { id: string }) {
 
               {(phaseHere ? [phaseHere] : stroke.phases).map((p) => (
                 <div key={p.id} className="phase-block">
-                  <h4><span className="num">{p.index}</span>{p.label}{!phaseHere && <button className="link" onClick={() => seekFrame(p.frame)}>view</button>}</h4>
+                  <h4><span className="num">{p.index}</span>{p.label}{stamp(p)}</h4>
                   <ul className="kps">
                     {phaseKps(p.id).map((k) => (
                       <li key={k.id} className={k.status}>
@@ -528,6 +535,7 @@ export function SessionView({ id }: { id: string }) {
                             {(k.min !== undefined || k.max !== undefined) && ` · target ${k.min !== undefined ? formatMetric(k.metric, k.min) : ''}${k.min !== undefined && k.max !== undefined ? '–' : k.min !== undefined ? '+' : 'up to '}${k.max !== undefined ? formatMetric(k.metric, k.max) : ''}`}
                           </small>
                         )}
+                        {phaseOf(k.phaseId) && <div className="kp-at">{stamp(phaseOf(k.phaseId)!, `at ${phaseOf(k.phaseId)!.label}`)}</div>}
                       </li>
                     ))}
                     {phaseKps(p.id).length === 0 && <li className="info"><p className="muted">No key points for this phase.</p></li>}
