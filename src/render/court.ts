@@ -1,6 +1,6 @@
 import { courtLines, courtMap, type CourtCalibration, type Vec2 } from '../core';
 import type { PlacedBounce } from '../storage/share';
-import { COLORS, toCanvas, type View } from './overlay';
+import { COLORS, MONO, toCanvas, type View } from './overlay';
 
 /** Draws the calibrated court lines, any corners tapped so far and the bounces near this frame. */
 export function drawCourtOverlay(view: View, cal: CourtCalibration | undefined, pending: Vec2[], bounces: PlacedBounce[], frame: number, fps: number, selected?: string) {
@@ -8,7 +8,7 @@ export function drawCourtOverlay(view: View, cal: CourtCalibration | undefined, 
   ctx.save();
   const map = cal ? courtMap(cal) : null;
   if (map) {
-    ctx.strokeStyle = 'rgba(212, 240, 76, 0.75)';
+    ctx.strokeStyle = 'rgba(67, 214, 196, 0.8)';
     ctx.lineWidth = Math.max(1.5, H / 400);
     ctx.setLineDash([H / 80, H / 120]);
     for (const [a, b] of courtLines(cal!.lines)) {
@@ -32,7 +32,7 @@ export function drawCourtOverlay(view: View, cal: CourtCalibration | undefined, 
     ctx.arc(c.x, c.y, H / 90, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = COLORS.ink;
-    ctx.font = `bold ${Math.round(H / 60)}px system-ui, sans-serif`;
+    ctx.font = `bold ${Math.round(H / 60)}px ${MONO}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(i + 1), c.x, c.y + 1);
@@ -45,14 +45,14 @@ export function drawCourtOverlay(view: View, cal: CourtCalibration | undefined, 
       const img = map.toImage(b.at);
       if (!img) continue;
       const c = toCanvas(view, img);
-      const col = b.inside ? COLORS.accent : COLORS.fix;
+      const col = b.inside ? COLORS.teal : COLORS.fix;
       ctx.strokeStyle = col;
       ctx.lineWidth = Math.max(2, H / 250);
       ctx.beginPath();
       ctx.ellipse(c.x, c.y, H / 45, H / 110, 0, 0, Math.PI * 2);
       ctx.stroke();
       const label = `${b.inside ? 'IN' : 'OUT'}${b.speed ? ` · ${Math.round(b.speed)} km/h` : ''}`;
-      ctx.font = `bold ${Math.round(H / 40)}px system-ui, sans-serif`;
+      ctx.font = `bold ${Math.round(H / 40)}px ${MONO}`;
       const w = ctx.measureText(label).width + H / 40;
       const h = H / 24;
       ctx.fillStyle = col;

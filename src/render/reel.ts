@@ -185,8 +185,8 @@ export async function exportStudioCompare(a: CompareSide, b: CompareSide, onProg
 /** Spaced capitals above each half ("PRO", "BEGINNER") and the neon divider between them. */
 function drawSideLabels(ctx: CanvasRenderingContext2D, left: string, right: string, top: number, panelW: number, panelH: number) {
   ctx.save();
-  ctx.strokeStyle = '#d4f04c';
-  ctx.shadowColor = '#d4f04c';
+  ctx.strokeStyle = '#f5b544';
+  ctx.shadowColor = '#f5b544';
   ctx.shadowBlur = 10;
   ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(panelW, top); ctx.lineTo(panelW, top + panelH); ctx.stroke();
@@ -194,7 +194,7 @@ function drawSideLabels(ctx: CanvasRenderingContext2D, left: string, right: stri
   ctx.font = '700 32px "Space Mono", ui-monospace, monospace';
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#d4f04c';
+  ctx.fillStyle = '#f5b544';
   ctx.fillText(left.toUpperCase().split('').join(' '), 36, top + 24);
   ctx.fillStyle = '#ffffff';
   ctx.fillText(right.toUpperCase().split('').join(' '), panelW + 36, top + 24);

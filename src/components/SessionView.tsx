@@ -472,7 +472,29 @@ export function SessionView({ id }: { id: string }) {
                 </select>
                 <button onClick={() => go({ name: 'compare', playerId: player.id, strokeId: stroke.id })}>Compare</button>
               </div>
-              {Number.isFinite(stroke.peakSpeed) && <p className="muted small">Peak hand speed {stroke.peakSpeed.toFixed(1)} m/s relative to the hips.</p>}
+              <div className="readout">
+                <div className="label">Telemetry readout <i>|</i> <b>Stroke {session.strokes.indexOf(stroke) + 1}</b></div>
+                <dl>
+                  <dt>Type</dt><dd className="a">{STROKE_LABEL[stroke.type]}</dd>
+                  <dt>Contact</dt><dd>{fmtTime(frameToTime(stroke.contactFrame))}</dd>
+                  <dt>Duration</dt><dd>{((stroke.endFrame - stroke.startFrame) / session.fps).toFixed(2)} s</dd>
+                  {Number.isFinite(stroke.peakSpeed) && <><dt>Peak hand speed</dt><dd className="v">{stroke.peakSpeed.toFixed(1)} m/s</dd></>}
+                  <dt>Key points on target</dt><dd className="t">{stroke.keyPoints.filter((k) => k.status === 'good').length}</dd>
+                  <dt>Fixes</dt><dd className="r">{stroke.keyPoints.filter((k) => k.status === 'fix').length}</dd>
+                </dl>
+                <div className="cycle" aria-label="Phase cycle">
+                  {stroke.phases.map((p) => {
+                    const fix = phaseKps(p.id).some((k) => k.status === 'fix');
+                    const here = phaseHere?.id === p.id;
+                    return (
+                      <div key={p.id} className={here ? 'here' : fix ? 'fix' : 'good'} onClick={() => seekFrame(p.frame)}>
+                        <span>{String(p.index).padStart(2, '0')}</span>{p.label}<i />
+                        <em>{here ? 'Live' : fix ? 'Fix' : 'Done'}</em>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
               {coach && insideStroke && !phaseHere && (
                 <div className="move-phase">
@@ -521,7 +543,7 @@ export function SessionView({ id }: { id: string }) {
                             {ANCHORS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
                           </select>
                           <select value={c.status} onChange={(e) => editCo(c, { status: e.target.value as Callout['status'] })}>
-                            <option value="good">Lime</option><option value="fix">Coral</option>
+                            <option value="good">Amber</option><option value="fix">Rose</option>
                           </select>
                           <button className="link" onClick={() => editCo(c, { hidden: !c.hidden })}>{c.hidden ? 'Show' : 'Hide'}</button>
                           <button className="link danger" onClick={() => delCo(c)}>✕</button>
