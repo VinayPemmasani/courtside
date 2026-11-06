@@ -3,6 +3,7 @@ import { STROKE_LABEL } from '../labels';
 import type { Player, Session } from '../storage/db';
 import { baseName, createFrameWriter, phaseSubtitle, type CardContext, type FrameWriter } from './export';
 import { saveFile, slug } from './files';
+import { MONO } from './overlay';
 import { StudioScene } from './scene3d';
 import { drawHeadline, loadStudioFonts, renderStudio, type Headline, type Surface } from './studio';
 
@@ -191,7 +192,7 @@ function drawSideLabels(ctx: CanvasRenderingContext2D, left: string, right: stri
   ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(panelW, top); ctx.lineTo(panelW, top + panelH); ctx.stroke();
   ctx.shadowBlur = 0;
-  ctx.font = '700 32px "Space Mono", ui-monospace, monospace';
+  ctx.font = `700 32px ${MONO}`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#f5b544';

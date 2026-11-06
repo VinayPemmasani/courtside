@@ -383,3 +383,16 @@ canvas.placing { cursor: crosshair; }
 .bounce-list li.out strong { color: var(--fix); }
 .bounce-list .acts { display: flex; gap: 8px; }
 @media (max-width: 720px) { .film-guide-body { grid-template-columns: 1fr; } }
+
+/* Phones: keep the top bar on one row and put the video first in a session. */
+@media (max-width: 760px) {
+  .topbar { gap: 10px; padding: 8px 12px; }
+  .brand em { display: none; }
+  .topbar nav { margin-left: auto; }
+  .topbar nav button { padding: 6px 8px; font-size: 10.5px; }
+  .session-head { gap: 8px; }
+  .title-input { min-width: 0; flex: 1 1 100%; }
+  .session-body .stage { order: -1; padding: 10px 12px; }
+  .stroke-list { border-right: none; border-top: 1px solid var(--line); }
+  .canvas-wrap { max-height: none; }
+}
