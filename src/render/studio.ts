@@ -1,6 +1,7 @@
 import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/700.css';
 import type { Callout, Handedness } from '../core';
+import { placeLabels, type Box } from './layout';
 import { COLORS, MONO, wrap } from './overlay';
 import type { SceneInput, StudioScene } from './scene3d';
 
@@ -40,6 +41,29 @@ export async function loadStudioFonts() {
  * made the headline taller than the frame, so the height caps it too (portrait reels are unchanged).
  */
 export const studioScale = (W: number, H: number) => Math.min(W / 1080, H / 1500);
+
+/** Where the headline's text ends (just under its hairline), in canvas pixels from the top. */
+export function headlineBottom(v: Surface, h: Headline): number {
+  const { ctx, W, H } = v;
+  const s = studioScale(W, H);
+  const room = W - 2 * 56 * s;
+  ctx.save();
+  let y = 104 * s + 22 * s;
+  for (const text of [h.line1, h.line2]) {
+    if (!text) continue;
+    ctx.font = `700 ${116 * s}px ${MONO}`;
+    y += Math.min(116 * s, (116 * s * room) / Math.max(1, ctx.measureText(text.toUpperCase()).width)) * 1.02;
+  }
+  if (h.subtitle) {
+    ctx.font = `500 ${32 * s}px ${MONO}`;
+    y += 22 * s + 44 * s * wrap(ctx, h.subtitle, room).slice(0, 2).length;
+  }
+  ctx.restore();
+  return y + 40 * s;
+}
+
+/** Top of the weight-transfer panel. */
+export const gaugeTop = (W: number, H: number) => H - 226 * studioScale(W, H);
 
 export function drawHeadline(v: Surface, h: Headline) {
   const { ctx, W, H } = v;
@@ -124,24 +148,36 @@ function drawDots(ctx: CanvasRenderingContext2D, right: number, y: number, s: nu
   }
 }
 
-/** Callout chips pinned to the 3D body: a reticle on the joint, a leader, and a bordered mono label. */
-export function drawPinnedLabels(v: Surface, scene: StudioScene, callouts: Callout[], hand: Handedness) {
+/**
+ * Callout chips pinned to the 3D body: a reticle on the joint, a leader, and a bordered mono label.
+ * Labels go in the empty space around the player, between `top` and `bottom` (under the headline
+ * and above the gauge), never over the mannequin, racket, swing path, ball or each other.
+ */
+export function drawPinnedLabels(v: Surface, scene: StudioScene, callouts: Callout[], hand: Handedness, area: { top?: number; bottom?: number } = {}) {
   const { ctx, W, H } = v;
   const s = studioScale(W, H);
   ctx.save();
   ctx.font = `700 ${26 * s}px ${MONO}`;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
+  const items = [];
   for (const c of callouts) {
     if (c.hidden) continue;
     const a = scene.projectAnchor(c.anchor, hand);
     if (!a) continue;
-    const colour = c.status === 'fix' ? RED : COLORS.accent;
     const text = c.label.toUpperCase();
-    const w = ctx.measureText(text).width + 40 * s;
-    const h = 50 * s;
-    const lx = Math.max(w / 2 + 12 * s, Math.min(W - w / 2 - 12 * s, a.x + c.dx * H * 0.8));
-    const ly = Math.max(H * 0.36, Math.min(H - h - 230 * s, a.y + c.dy * H * 0.8));
+    items.push({ c, a, text, w: ctx.measureText(text).width + 40 * s, h: 50 * s });
+  }
+  const top = area.top ?? 12 * s;
+  const bottom = area.bottom ?? H - 12 * s;
+  const taken: Box[] = [];
+  const spots = placeLabels(
+    items.map((it) => ({ anchor: it.a, w: it.w, h: it.h, preferred: { x: it.a.x + it.c.dx * H * 0.8, y: it.a.y + it.c.dy * H * 0.8 } })),
+    { body: scene.screenDiscs(), taken, bounds: { x: 12 * s, y: top, w: W - 24 * s, h: Math.max(60 * s, bottom - top) }, margin: 10 * s, reach: 70 * s },
+  );
+  items.forEach(({ c, a, text, w, h }, k) => {
+    const colour = c.status === 'fix' ? RED : COLORS.accent;
+    const { x: lx, y: ly } = spots[k];
     ctx.strokeStyle = colour;
     ctx.fillStyle = colour;
     ctx.shadowColor = colour;
@@ -170,7 +206,7 @@ export function drawPinnedLabels(v: Surface, scene: StudioScene, callouts: Callo
     ctx.fillStyle = colour;
     ctx.fillRect(lx - w / 2, ly - h / 2, 6 * s, h);
     ctx.fillText(text, lx - w / 2 + 22 * s, ly + 2 * s);
-  }
+  });
   ctx.restore();
 }
 
@@ -239,7 +275,14 @@ export function renderStudio(v: Surface, scene: StudioScene, input: SceneInput, 
   scene.setSize(v.W, v.H);
   scene.render({ ...input, rings: callouts.map((c) => ({ anchor: c.anchor, status: c.status })) });
   v.ctx.drawImage(scene.canvas, 0, 0, v.W, v.H);
-  if (callouts.length) drawPinnedLabels(v, scene, callouts, input.hand);
+  if (callouts.length) {
+    const s = studioScale(v.W, v.H);
+    drawPinnedLabels(v, scene, callouts, input.hand, {
+      // Without a headline, stay under the side names of a split screen.
+      top: overlay.headline ? headlineBottom(v, overlay.headline) : 84 * s,
+      bottom: overlay.gauge !== undefined && overlay.gauge !== null ? gaugeTop(v.W, v.H) - 12 * s : v.H - 12 * s,
+    });
+  }
   if (overlay.gauge !== undefined) drawWeightGauge(v, overlay.gauge);
   if (overlay.headline) drawHeadline(v, overlay.headline);
 }

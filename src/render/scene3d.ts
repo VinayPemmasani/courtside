@@ -8,6 +8,7 @@ import {
   anchorIndices, ballFlight, centreOfMass, COURT, deeperKnee, estimateRacket, shareAt, strokeSpace, toCourt,
   type AnchorJoint, type BallFlight, type Handedness, type PoseFrame, type Status, type Stroke, type StrokeSpace, type Vec3, type WeightTransfer,
 } from '../core';
+import { alongPath, alongSegment, bodyDiscs, type Disc } from './layout';
 
 /**
  * The 3D studio: the player as a jointed, shaded mannequin driven by the pose's world landmarks,
@@ -71,6 +72,8 @@ export class StudioScene {
   private footGlow: THREE.Mesh[];
   private spaces = new WeakMap<Stroke, { key: string; space: StrokeSpace; flight: BallFlight | null }>();
   private lastSpace: StrokeSpace | null = null;
+  /** Court-space racket, swing path and ball flight of the last frame, for keeping text off them. */
+  private shown: { racket: THREE.Vector3[]; path: THREE.Vector3[]; flight: THREE.Vector3[] } = { racket: [], path: [], flight: [] };
 
   constructor(width: number, height: number) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -290,6 +293,36 @@ export class StudioScene {
     return this.project(p);
   }
 
+  /**
+   * The mannequin, racket, swing path and ball of the last rendered frame as discs in canvas
+   * pixels, so labels can be placed in the empty space around them.
+   */
+  screenDiscs(): Disc[] {
+    if (!this.current) return [];
+    const { w, space } = this.current;
+    const screen = (p: THREE.Vector3) => {
+      const v = p.clone().project(this.camera);
+      return v.z > 1 ? null : { x: ((v.x + 1) / 2) * this.canvas.width, y: ((1 - v.y) / 2) * this.canvas.height };
+    };
+    const pts = w.map((p) => screen(v3(toCourt(p, space))));
+    const out = bodyDiscs(pts);
+    // Sizes on screen follow the torso, as the limbs do.
+    const sm = pts[11] && pts[12] ? { x: (pts[11].x + pts[12].x) / 2, y: (pts[11].y + pts[12].y) / 2 } : null;
+    const hm = pts[23] && pts[24] ? { x: (pts[23].x + pts[24].x) / 2, y: (pts[23].y + pts[24].y) / 2 } : null;
+    const torso = sm && hm ? Math.hypot(sm.x - hm.x, sm.y - hm.y) : this.canvas.height * 0.08;
+    // Feet and hands are drawn bigger than their landmarks.
+    for (const i of [15, 16, 29, 30, 31, 32]) if (pts[i]) out.push({ ...pts[i]!, r: torso * 0.22 });
+    const [grip, head, tip] = this.shown.racket.map(screen);
+    if (grip && tip) out.push(...alongSegment(grip, tip, torso * 0.12));
+    if (head) out.push({ ...head, r: torso * 0.38 });
+    const line = (vs: THREE.Vector3[]) => vs.map(screen).filter((p): p is { x: number; y: number } => !!p);
+    out.push(...alongPath(line(this.shown.path), torso * 0.1));
+    out.push(...alongPath(line(this.shown.flight), torso * 0.12));
+    const ball = this.ball.visible ? screen(this.ball.position) : null;
+    if (ball) out.push({ ...ball, r: torso * 0.4 });
+    return out;
+  }
+
   render(input: SceneInput) {
     const w = input.frames[input.i]?.world;
     const { space, flight } = this.spaceFor(input);
@@ -352,10 +385,12 @@ export class StudioScene {
     // Racket.
     const r = estimateRacket(w, hand);
     this.racket.visible = !!r;
+    this.shown.racket = [];
     if (!r) return;
     const grip = v3(toCourt(r.grip, space));
     const head = v3(toCourt(r.head, space));
     const tip = v3(toCourt(r.tip, space));
+    this.shown.racket = [grip, head, tip];
     const dir = tip.clone().sub(grip).normalize();
     const shaft = this.racket.getObjectByName('shaft') as THREE.Mesh;
     place(shaft, grip, grip.clone().lerp(tip, 0.5));
@@ -372,6 +407,7 @@ export class StudioScene {
 
   private racketPath(input: SceneInput, space: StrokeSpace) {
     if (this.path) { this.scene.remove(this.path); this.path.geometry.dispose(); this.path = null; }
+    this.shown.path = [];
     const st = input.stroke;
     if (!st) return;
     const pts: THREE.Vector3[] = [];
@@ -380,6 +416,7 @@ export class StudioScene {
       if (r) pts.push(v3(toCourt(r.head, space)));
     }
     if (pts.length < 3) return;
+    this.shown.path = pts;
     this.path = tube(pts, 0.018, NEON);
     this.scene.add(this.path);
   }
@@ -391,8 +428,10 @@ export class StudioScene {
     const now = input.ball !== false && flight ? flight.at(t) : null;
     this.ball.visible = !!now;
     this.ballLight.visible = !!now;
+    this.shown.flight = [];
     if (!now || !flight) return;
     this.ball.position.copy(v3(now));
+    this.shown.flight = [this.ball.position.clone()];
     this.ballLight.position.copy(this.ball.position);
     const pts: THREE.Vector3[] = [];
     for (let k = Math.max(-flight.before, t - 0.45); k <= t + 1e-6; k += 1 / 60) {
@@ -400,6 +439,7 @@ export class StudioScene {
       if (p) pts.push(v3(p));
     }
     if (pts.length < 3) return;
+    this.shown.flight = [...pts, this.ball.position.clone()];
     this.trail = tube(pts, 0.016, VIOLET);
     this.scene.add(this.trail);
   }

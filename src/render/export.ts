@@ -5,7 +5,8 @@ import { formatMetric, METRIC_INFO, topFix, type Handedness, type Phase, type Po
 import { STROKE_LABEL, fmtStamp } from '../labels';
 import type { Player, Session } from '../storage/db';
 import { FrameGrabber } from './grabber';
-import { cropAround, drawCallouts, drawHeader, drawTimecode, drawSkeleton, drawTrail, drawVideo, type View } from './overlay';
+import { bodyHits, clearestBox, overlapArea, type Box, type Disc } from './layout';
+import { cardBody, cropAround, drawCallouts, drawHeader, drawSkeleton, drawTimecode, drawTrail, drawVideo, headerHeight, timecodeSize, type HeaderOpts, type View } from './overlay';
 import { saveFile, slug } from './files';
 
 export interface CardContext {
@@ -26,28 +27,88 @@ export function phaseSubtitle(stroke: Stroke, phase: Phase): string | undefined 
 /** "0:04.27 · frame 128": where a phase sits in the original video. */
 export const phaseStamp = (s: Session, phase: Phase) => `${fmtStamp(frameTime(s, phase.frame))} · frame ${phase.frame + 1}`;
 
+export function phaseHeader(ctx: CardContext, stroke: Stroke, phase: Phase): HeaderOpts {
+  return {
+    index: phase.index,
+    title: phase.label,
+    subtitle: phaseSubtitle(stroke, phase),
+    kicker: `${ctx.player.name} · ${STROKE_LABEL[stroke.type]}`,
+  };
+}
+
+/** Share of a W×H card's height the tallest of these headers needs, so the crop can leave it clear. */
+export function headerReserve(headers: HeaderOpts[], W: number, H: number): number {
+  const m = document.createElement('canvas').getContext('2d')!;
+  return Math.max(0, ...headers.map((h) => headerHeight(m, W, h))) / H;
+}
+
+export interface HeaderPlace { at: 'top' | 'bottom'; solid: boolean }
+
+/**
+ * The header goes at the top, or at the bottom when the player reaches into the top band but not
+ * the bottom one; it gets a dark panel only when neither band is clear of the player. `prefer`
+ * keeps a set of cards consistent: that band is used whenever it is clear on this card.
+ */
+export function placeHeader(view: View, body: Disc[], header: HeaderOpts, prefer: 'top' | 'bottom' = 'top'): HeaderPlace {
+  const hh = headerHeight(view.ctx, view.W, header);
+  const top = { x: 0, y: 0, w: view.W, h: hh };
+  const bottom = { x: 0, y: view.H - hh, w: view.W, h: hh };
+  const bands = prefer === 'top' ? [top, bottom] : [bottom, top];
+  const { index, hits } = clearestBox(bands, body);
+  return { at: (index === 0) === (prefer === 'top') ? 'top' : 'bottom', solid: hits > 0 };
+}
+
+/** The labels, kept off the player and the header, then the header on top. */
+export function drawCardText(view: View, body: Disc[], header: HeaderOpts | null, labels: (taken: Box[]) => void, place?: HeaderPlace) {
+  if (!header) { labels([]); return; }
+  const p = place ?? placeHeader(view, body, header);
+  const hh = headerHeight(view.ctx, view.W, header);
+  labels([{ x: 0, y: p.at === 'top' ? 0 : view.H - hh, w: view.W, h: hh }]);
+  drawHeader(view, header, p);
+}
+
+/** Top-left of the timestamp pill: the corner clearest of the player, outside the header. */
+export function placeTimecode(view: View, body: Disc[], size: { w: number; h: number }, header: Box | null): { x: number; y: number } {
+  const m = 40 * (view.W / 1080);
+  const corners = [
+    { x: m, y: view.H - size.h - m }, { x: view.W - size.w - m, y: view.H - size.h - m },
+    { x: m, y: m }, { x: view.W - size.w - m, y: m },
+  ];
+  let best = corners[0], cost = Infinity;
+  for (const c of corners) {
+    const box = { x: c.x, y: c.y, w: size.w, h: size.h };
+    const n = bodyHits(box, body) + (header && overlapArea(box, header) > 0 ? 1000 : 0);
+    if (n < cost) { cost = n; best = c; }
+  }
+  return best;
+}
+
 export async function renderCard(ctx: CardContext, stroke: Stroke, phase: Phase, W: number, H: number, opts: { header?: boolean } = {}): Promise<HTMLCanvasElement> {
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
   const c2d = canvas.getContext('2d')!;
   const hand: Handedness = ctx.player.hand;
+  const header = opts.header !== false ? phaseHeader(ctx, stroke, phase) : null;
+  // One crop for every phase card, with room for the tallest header above the player.
+  const reserve = header ? headerReserve(stroke.phases.map((p) => phaseHeader(ctx, stroke, p)), W, H) : 0;
   await ctx.grabber.at(frameTime(ctx.session, phase.frame), (video) => {
-    const crop = cropAround(ctx.frames, stroke.startFrame, stroke.endFrame, video.videoWidth, video.videoHeight, W / H);
+    const crop = cropAround(ctx.frames, stroke.startFrame, stroke.endFrame, video.videoWidth, video.videoHeight, W / H, reserve);
     const view: View = { ctx: c2d, W, H, vw: video.videoWidth, vh: video.videoHeight, crop };
     drawVideo(view, video);
     drawTrail(view, ctx.frames, stroke, phase.frame, hand);
     drawSkeleton(view, ctx.frames[phase.frame]?.image ?? null);
-    drawCallouts(view, ctx.frames[phase.frame], stroke.callouts.filter((c) => c.phaseId === phase.id), hand);
-    if (opts.header !== false) {
-      drawHeader(view, {
-        index: phase.index,
-        title: phase.label,
-        subtitle: phaseSubtitle(stroke, phase),
-        kicker: `${ctx.player.name} · ${STROKE_LABEL[stroke.type]}`,
-      });
-      drawTimecode(view, phaseStamp(ctx.session, phase));
-    }
+    const body = cardBody(view, ctx.frames, phase.frame, hand, stroke);
+    // The band that is clear on most of the stroke's cards, so a carousel keeps its header in one place.
+    const place = header
+      ? placeHeader(view, body, header, placeHeader(view, stroke.phases.flatMap((p) => cardBody(view, ctx.frames, p.frame, hand, stroke)), header).at)
+      : undefined;
+    drawCardText(view, body, header, (taken) => {
+      // The timestamp takes the clearest free corner, and the labels keep out of it too.
+      const stamp = header ? phaseStamp(ctx.session, phase) : null;
+      if (stamp) taken.push(drawTimecode(view, stamp, placeTimecode(view, body, timecodeSize(c2d, W, stamp), taken[0] ?? null)));
+      drawCallouts(view, ctx.frames[phase.frame], stroke.callouts.filter((c) => c.phaseId === phase.id), hand, undefined, { body, taken });
+    }, place);
   });
   return canvas;
 }
@@ -165,8 +226,14 @@ export async function exportVideo(ctx: CardContext, stroke: Stroke, onProgress?:
   const rec = startRecording(canvas);
 
   const { w: vw, h: vh } = await ctx.grabber.size();
-  const crop = cropAround(ctx.frames, stroke.startFrame, stroke.endFrame, vw, vh, W / H);
+  const slowHeader: HeaderOpts = { index: 0, title: 'Slow motion', kicker: `${ctx.player.name} · ${STROKE_LABEL[stroke.type]}` };
+  const reserve = headerReserve([slowHeader, ...stroke.phases.map((p) => phaseHeader(ctx, stroke, p))], W, H);
+  const crop = cropAround(ctx.frames, stroke.startFrame, stroke.endFrame, vw, vh, W / H, reserve);
   const view: View = { ctx: c2d, W, H, vw, vh, crop };
+  // One header spot for the whole slow motion, clear of the player in every frame, so it never jumps.
+  const swept: Disc[] = [];
+  for (let i = stroke.startFrame; i <= stroke.endFrame; i++) swept.push(...cardBody(view, ctx.frames, i, ctx.player.hand));
+  const slowPlace = placeHeader(view, swept, slowHeader);
   const hold = 1000 / (ctx.session.fps * 0.25);
   const totalSteps = stroke.endFrame - stroke.startFrame + 1 + stroke.phases.length;
   let step = 0;
@@ -178,7 +245,7 @@ export async function exportVideo(ctx: CardContext, stroke: Stroke, onProgress?:
       drawVideo(view, video);
       drawTrail(view, ctx.frames, stroke, i, ctx.player.hand);
       drawSkeleton(view, ctx.frames[i]?.image ?? null);
-      drawHeader(view, { index: 0, title: 'Slow motion', kicker: `${ctx.player.name} · ${STROKE_LABEL[stroke.type]}` });
+      drawCardText(view, [], slowHeader, () => undefined, slowPlace);
     });
     await wait(Math.max(0, hold - (performance.now() - t0)));
     onProgress?.(++step / totalSteps);
