@@ -54,7 +54,7 @@ export function measure(frames: PoseFrame[], i: number, refFrame: number, hand: 
   const axes = bodyAxes(w, hand);
   const domWrist = w[dom.wrist];
   const rel = sub(domWrist, axes.hipMid);
-  const m: Record<MetricId, number> = {
+  const m: Metrics = {
     shoulderTurn: Math.abs(yawSeries[i] - yawSeries[refFrame]),
     elbowAngle: jointAngle(w[dom.shoulder], w[dom.elbow], domWrist),
     kneeBend: Math.min(
@@ -68,7 +68,7 @@ export function measure(frames: PoseFrame[], i: number, refFrame: number, hand: 
     crossBody: -dot(rel, axes.lateralDom),
     tossArmUp: w[LM.nose].y - w[non.wrist].y,
   };
-  for (const k of Object.keys(m) as MetricId[]) if (!Number.isFinite(m[k])) delete m[k];
+  for (const k of Object.keys(m) as MetricId[]) if (!Number.isFinite(m[k]!)) delete m[k];
   return m;
 }
 
@@ -82,10 +82,21 @@ export const METRIC_INFO: Record<MetricId, { label: string; unit: string; digits
   wristAboveShoulder: { label: 'Wrist above shoulder', unit: 'm', digits: 2 },
   crossBody: { label: 'Wrist across body', unit: 'm', digits: 2 },
   tossArmUp: { label: 'Toss hand above head', unit: 'm', digits: 2 },
+  swingPath: { label: 'Swing path into contact', unit: '°', digits: 0 },
+  hipTurn: { label: 'Hip turn', unit: '°', digits: 0 },
+  hipShoulderSep: { label: 'Hip-shoulder separation', unit: '°', digits: 0 },
+  comDrop: { label: 'Body drop (gravity load)', unit: 'm', digits: 2 },
+  legDrive: { label: 'Leg drive (knee extension)', unit: '°', digits: 0 },
+  weightShift: { label: 'Weight shift to front foot', unit: '%', digits: 0 },
+  hipSpeed: { label: 'Peak hip rotation speed', unit: '°/s', digits: 0 },
+  trunkSpeed: { label: 'Peak trunk rotation speed', unit: '°/s', digits: 0 },
+  chainSequence: { label: 'Kinetic chain order (of 3)', unit: '', digits: 0 },
+  bodyPower: { label: 'Hand speed from body rotation', unit: '%', digits: 0 },
 };
 
 export function formatMetric(id: MetricId, v: number | undefined): string {
   if (v === undefined || Number.isNaN(v)) return '–';
   const info = METRIC_INFO[id];
-  return `${v.toFixed(info.digits)}${info.unit === '°' ? '°' : ' ' + info.unit}`;
+  const u = info.unit === '°' || info.unit === '%' || info.unit === '' ? info.unit : ' ' + info.unit;
+  return `${v.toFixed(info.digits)}${u}`;
 }

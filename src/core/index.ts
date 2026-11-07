@@ -12,3 +12,4 @@ export * from './scene';
 export * from './racket';
 export * from './court';
 export * from './setup';
+export * from './biomech';
