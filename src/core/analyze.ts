@@ -4,6 +4,7 @@ import { classifyStroke, detectStrokes, windowAt, type DetectOptions, type Strok
 import { findPhases } from './phases';
 import { measure, shoulderYawSeries } from './metrics';
 import { applyRules, newId } from './rules';
+import { biomechanics, hipYawSeries } from './biomech';
 
 export interface AnalysisInput {
   frames: PoseFrame[];
@@ -19,11 +20,13 @@ export interface Prepared {
   fps: number;
   hand: Handedness;
   yaw: number[];
+  /** Hip-line heading per frame, for hip rotation and separation. */
+  hipYaw?: number[];
 }
 
 export function prepare(frames: PoseFrame[], fps: number, hand: Handedness): Prepared {
   const clean = cleanFrames(frames);
-  return { frames: clean, fps, hand, yaw: shoulderYawSeries(clean) };
+  return { frames: clean, fps, hand, yaw: shoulderYawSeries(clean), hipYaw: hipYawSeries(clean) };
 }
 
 /** Build a stroke from a window, optionally forcing its type. */
@@ -52,7 +55,11 @@ export function remeasure(p: Prepared, stroke: Stroke, rules: Rule[]): Stroke {
   const ref = stroke.phases[0]?.frame ?? stroke.startFrame;
   const metrics: Stroke['metrics'] = {};
   for (const ph of stroke.phases) metrics[ph.id] = measure(p.frames, ph.frame, ref, p.hand, p.yaw);
-  const next = { ...stroke, metrics };
+  // Older saved sessions have no hip series; build it on demand.
+  const hipYaw = p.hipYaw ?? (p.hipYaw = hipYawSeries(p.frames));
+  const bio = biomechanics(p.frames, { ...stroke, metrics }, p.hand, p.fps, p.yaw, hipYaw);
+  for (const [id, m] of Object.entries(bio.byPhase)) metrics[id as PhaseId] = { ...metrics[id as PhaseId], ...m };
+  const next = { ...stroke, metrics, spin: bio.spin };
   return { ...next, ...applyRules(next, rules, p.hand) };
 }
 

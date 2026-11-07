@@ -50,7 +50,17 @@ export type MetricId =
   | 'handsTogether'
   | 'wristAboveShoulder'
   | 'crossBody'
-  | 'tossArmUp';
+  | 'tossArmUp'
+  | 'swingPath'
+  | 'hipTurn'
+  | 'hipShoulderSep'
+  | 'comDrop'
+  | 'legDrive'
+  | 'weightShift'
+  | 'hipSpeed'
+  | 'trunkSpeed'
+  | 'chainSequence'
+  | 'bodyPower';
 
 export type Metrics = Partial<Record<MetricId, number>>;
 
@@ -102,6 +112,8 @@ export interface Stroke {
   endFrame: number;
   contactFrame: number;
   peakSpeed: number;
+  /** Groundstroke spin from the swing path into contact. */
+  spin?: 'topspin' | 'flat' | 'slice';
   phases: Phase[];
   metrics: Partial<Record<PhaseId, Metrics>>;
   keyPoints: KeyPoint[];

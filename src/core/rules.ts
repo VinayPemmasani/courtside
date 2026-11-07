@@ -4,6 +4,7 @@ const FH: Rule['strokes'] = ['forehand'];
 const BH1: Rule['strokes'] = ['backhand-1h'];
 const BH2: Rule['strokes'] = ['backhand-2h'];
 const SV: Rule['strokes'] = ['serve'];
+const GS: Rule['strokes'] = ['forehand', 'backhand-1h', 'backhand-2h'];
 
 /**
  * Starting target ranges. They are deliberately broad defaults for a coach to tune in
@@ -42,6 +43,17 @@ export const DEFAULT_RULES: Rule[] = [
   { id: 'sv-extension', strokes: SV, phase: 'contact', metric: 'elbowAngle', min: 155, good: 'Fully extended at contact.', fixLow: 'Reach up and hit with a straight arm.', anchor: 'domElbow', goodLabel: 'Full extension', fixLabel: 'Reach up', enabled: true },
   { id: 'sv-height', strokes: SV, phase: 'contact', metric: 'contactHeight', min: 0.35, good: 'Contact at full reach above the head.', fixLow: 'Hit the ball higher, at full reach above your head.', anchor: 'domWrist', goodLabel: 'High contact', fixLabel: 'Contact higher', enabled: true },
   { id: 'sv-finish', strokes: SV, phase: 'follow-through', metric: 'crossBody', min: 0.0, good: 'Finishes on the opposite side.', fixLow: 'Let the racket finish on your {nonDom} side.', anchor: 'domWrist', goodLabel: 'Finish across', fixLabel: 'Finish across', enabled: true },
+  // Whole-body power (all groundstrokes): the legs, hips and trunk drive the arm.
+  { id: 'gs-separation', strokes: GS, phase: 'backswing', metric: 'hipShoulderSep', min: 20, good: 'Shoulders coil past the hips: the trunk is stretched like a spring.', fixLow: 'Turn your shoulders further than your hips so the trunk stretches and can uncoil.', anchor: 'hips', goodLabel: 'Hip-shoulder stretch', fixLabel: 'Coil shoulders past hips', enabled: true },
+  { id: 'gs-weight', strokes: GS, phase: 'contact', metric: 'weightShift', min: 25, good: 'Weight moves from the back foot into the front foot.', fixLow: 'Load the back foot, then push your weight forward into the shot.', anchor: 'hips', goodLabel: 'Weight forward', fixLabel: 'Move weight forward', enabled: true },
+  { id: 'gs-legs', strokes: GS, phase: 'contact', metric: 'legDrive', min: 8, good: 'Legs push up out of the knee bend into the ball.', fixLow: 'Push up with your legs as you swing instead of staying low.', anchor: 'knee', goodLabel: 'Leg drive', fixLabel: 'Drive with legs', enabled: true },
+  { id: 'gs-chain', strokes: GS, phase: 'contact', metric: 'chainSequence', min: 2, good: 'Hips, then trunk, then arm, then hand: power flows up the chain.', fixLow: 'Start the swing with the hips; let the trunk pull the arm through, not the other way round.', anchor: 'hips', goodLabel: 'Kinetic chain', fixLabel: 'Hips lead the swing', enabled: true },
+  { id: 'gs-body-power', strokes: GS, phase: 'contact', metric: 'bodyPower', min: 35, good: 'Much of the hand speed comes from body rotation, not just the arm.', fixLow: 'You are mostly arming the ball; rotate your hips and trunk through the shot.', anchor: 'shoulders', goodLabel: 'Body power', fixLabel: 'Use the body, not the arm', enabled: true },
+
+  // Serve body power
+  { id: 'sv-legs', strokes: SV, phase: 'contact', metric: 'legDrive', min: 20, good: 'Legs drive up into the ball.', fixLow: 'Bend, then explode up with your legs into the serve.', anchor: 'knee', goodLabel: 'Leg drive', fixLabel: 'Drive up with legs', enabled: true },
+  { id: 'sv-separation', strokes: SV, phase: 'trophy', metric: 'hipShoulderSep', min: 15, good: 'Shoulders coiled past the hips in the trophy position.', fixLow: 'Turn your shoulders more than your hips in the trophy position.', anchor: 'hips', goodLabel: 'Coiled trunk', fixLabel: 'Coil shoulders', enabled: true },
+  { id: 'sv-chain', strokes: SV, phase: 'contact', metric: 'chainSequence', min: 2, good: 'Legs and hips start the serve, the arm finishes it.', fixLow: 'Let the hips and trunk start the upswing before the arm.', anchor: 'hips', goodLabel: 'Kinetic chain', fixLabel: 'Hips first', enabled: true },
 ];
 
 export function fillHand(text: string, hand: Handedness): string {

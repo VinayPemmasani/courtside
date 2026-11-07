@@ -374,7 +374,7 @@ export function SessionView({ id }: { id: string }) {
               <button key={s.id} className={`stroke-item ${s.id === strokeId ? 'selected' : ''}`} onClick={() => { setStrokeId(s.id); seekFrame(s.phases[0]?.frame ?? s.startFrame); }}>
                 <span className="n">{i + 1}</span>
                 <span>
-                  <strong>{STROKE_LABEL[s.type]}</strong>
+                  <strong>{STROKE_LABEL[s.type]}{s.spin ? ` · ${s.spin}` : ''}</strong>
                   <small>{fmtTime(frameToTime(s.contactFrame))}</small>
                   {fix ? <em className="fix">{fix.text}</em> : <em className="good">No fixes flagged</em>}
                 </span>
@@ -482,7 +482,7 @@ export function SessionView({ id }: { id: string }) {
               <div className="readout">
                 <div className="label">Telemetry readout <i>|</i> <b>Stroke {session.strokes.indexOf(stroke) + 1}</b></div>
                 <dl>
-                  <dt>Type</dt><dd className="a">{STROKE_LABEL[stroke.type]}</dd>
+                  <dt>Type</dt><dd className="a">{STROKE_LABEL[stroke.type]}{stroke.spin ? ` · ${stroke.spin}` : ''}</dd>
                   <dt>Contact</dt><dd>{fmtTime(frameToTime(stroke.contactFrame))}</dd>
                   <dt>Duration</dt><dd>{((stroke.endFrame - stroke.startFrame) / session.fps).toFixed(2)} s</dd>
                   {Number.isFinite(stroke.peakSpeed) && <><dt>Peak hand speed</dt><dd className="v">{stroke.peakSpeed.toFixed(1)} m/s</dd></>}
