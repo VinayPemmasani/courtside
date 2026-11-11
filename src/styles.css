@@ -407,3 +407,25 @@ canvas.placing { cursor: crosshair; }
 .kp-at { margin-top: 3px; }
 .kp-at .stamp { margin-left: 0; }
 .cycle .ts { text-align: right; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+
+/* Insight panels: power sequence, contact reading, next-session focus */
+.insight { border: 1px solid var(--line); background: var(--panel); padding: 10px 12px; margin-bottom: 12px; font-size: 12px; }
+.insight .label { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.insight .label b { font-weight: 700; } .insight .label b.t { color: var(--teal); } .insight .label b.r { color: var(--fix); } .insight .label b.a { color: var(--accent); }
+.insight p { margin: 6px 0 0; line-height: 1.45; }
+.insight .small { font-size: 10.5px; }
+.power-seq svg { display: block; width: 100%; height: auto; margin-top: 8px; cursor: crosshair; background: var(--bg); }
+.power-seq line.contact { stroke: var(--fix); stroke-dasharray: 3 3; stroke-width: 1; }
+.power-seq line.now { stroke: var(--muted); stroke-width: 1; }
+.power-seq .seq { list-style: none; padding: 0; margin: 8px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; font-size: 11px; }
+.power-seq .seq li { display: flex; align-items: center; gap: 6px; }
+.power-seq .seq i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.power-seq .seq small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.power-seq .seq em { margin-left: auto; font-style: normal; color: var(--teal); font-variant-numeric: tabular-nums; } .power-seq .seq em.r { color: var(--fix); }
+.contact-reading dl { margin: 8px 0 0; display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 11.5px; }
+.contact-reading dt { color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.contact-reading dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.contact-reading dd.a { color: var(--accent); } .contact-reading dd.v { color: var(--violet); }
+.focus { border-color: var(--accent); }
+.focus .focus-title { font-size: 13.5px; color: #fff; font-weight: 600; }
+.focus .q { color: var(--accent); font-style: italic; }

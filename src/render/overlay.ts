@@ -1,4 +1,4 @@
-import { anchorIndices, deeperKnee, SKELETON, sides, type Callout, type Handedness, type ImagePoint, type PoseFrame, type Stroke } from '../core';
+import { anchorIndices, deeperKnee, forwardSwingEnd, forwardSwingStart, SKELETON, sides, type Callout, type Handedness, type ImagePoint, type PoseFrame, type Stroke } from '../core';
 import { alongPath, bodyDiscs, placeLabels, visiblePoints, type Box, type Disc } from './layout';
 
 export const COLORS = {
@@ -115,11 +115,23 @@ export function drawSkeleton(v: View, pts: ImagePoint[] | null, dim = false) {
   ctx.restore();
 }
 
-/** Path of the hitting wrist from the start of the stroke to `upTo`, with an arrowhead. */
+/** Frames the trail covers at `upTo`: the preparation until the forward swing starts, then only the forward swing. */
+export function trailRange(stroke: Stroke, upTo: number): { from: number; to: number; forward: boolean } {
+  const start = forwardSwingStart(stroke);
+  if (upTo < start) return { from: stroke.startFrame, to: upTo, forward: false };
+  return { from: start, to: Math.min(upTo, forwardSwingEnd(stroke)), forward: true };
+}
+
+/**
+ * Path of the hitting wrist with an arrowhead. During the preparation it shows faintly; once the
+ * forward swing starts only the forward swing is drawn, ending at the follow-through, so the route
+ * the racket takes through contact is easy to read.
+ */
 export function drawTrail(v: View, frames: PoseFrame[], stroke: Stroke, upTo: number, hand: Handedness) {
   const { dom } = sides(hand);
+  const range = trailRange(stroke, upTo);
   const pts = [];
-  for (let i = stroke.startFrame; i <= Math.min(upTo, stroke.endFrame); i++) {
+  for (let i = range.from; i <= range.to; i++) {
     const p = frames[i]?.image?.[dom.wrist];
     if (p && p.v > 0.3) pts.push(toCanvas(v, p));
   }
@@ -131,7 +143,7 @@ export function drawTrail(v: View, frames: PoseFrame[], stroke: Stroke, upTo: nu
   ctx.lineJoin = 'round';
   for (let i = 1; i < pts.length; i++) {
     ctx.strokeStyle = COLORS.accent;
-    ctx.globalAlpha = 0.15 + 0.75 * (i / pts.length);
+    ctx.globalAlpha = (range.forward ? 1 : 0.4) * (0.15 + 0.75 * (i / pts.length));
     ctx.lineWidth = (2 + 3 * (i / pts.length)) * s;
     ctx.beginPath(); ctx.moveTo(pts[i - 1].x, pts[i - 1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
   }
@@ -139,7 +151,7 @@ export function drawTrail(v: View, frames: PoseFrame[], stroke: Stroke, upTo: nu
   const b = pts[pts.length - 1];
   const ang = Math.atan2(b.y - a.y, b.x - a.x);
   if (Math.hypot(b.x - a.x, b.y - a.y) > 1) {
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = range.forward ? 1 : 0.4;
     ctx.fillStyle = COLORS.accent;
     ctx.beginPath();
     ctx.moveTo(b.x + Math.cos(ang) * 12 * s, b.y + Math.sin(ang) * 12 * s);
@@ -267,7 +279,8 @@ export function cardBody(v: View, frames: PoseFrame[], frame: number, hand: Hand
   const body = bodyDiscs(pts, { dominantWrist: dom.wrist, dominantElbow: dom.elbow });
   if (stroke) {
     const trail = [];
-    for (let i = stroke.startFrame; i <= Math.min(frame, stroke.endFrame); i++) {
+    const range = trailRange(stroke, frame);
+    for (let i = range.from; i <= range.to; i++) {
       const p = frames[i]?.image?.[dom.wrist];
       if (p && p.v > 0.3) trail.push(toCanvas(v, p));
     }

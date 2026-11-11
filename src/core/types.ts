@@ -60,7 +60,10 @@ export type MetricId =
   | 'hipSpeed'
   | 'trunkSpeed'
   | 'chainSequence'
-  | 'bodyPower';
+  | 'bodyPower'
+  | 'faceTilt'
+  | 'pathFaceGap'
+  | 'prepLead';
 
 export type Metrics = Partial<Record<MetricId, number>>;
 

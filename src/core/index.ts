@@ -13,3 +13,4 @@ export * from './racket';
 export * from './court';
 export * from './setup';
 export * from './biomech';
+export * from './diagnose';

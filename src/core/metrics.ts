@@ -92,6 +92,9 @@ export const METRIC_INFO: Record<MetricId, { label: string; unit: string; digits
   trunkSpeed: { label: 'Peak trunk rotation speed', unit: '°/s', digits: 0 },
   chainSequence: { label: 'Kinetic chain order (of 3)', unit: '', digits: 0 },
   bodyPower: { label: 'Hand speed from body rotation', unit: '%', digits: 0 },
+  faceTilt: { label: 'Racket face closed (estimate)', unit: '°', digits: 0 },
+  pathFaceGap: { label: 'Swing path vs face angle', unit: '°', digits: 0 },
+  prepLead: { label: 'Turn started before contact', unit: 's', digits: 2 },
 };
 
 export function formatMetric(id: MetricId, v: number | undefined): string {
