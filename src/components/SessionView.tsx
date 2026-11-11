@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../App';
 import {
-  checkSetup, formatMetric, METRIC_INFO, movePhase, strokeForBounce, type Lines, type Vec2, newId, prepare, retypeStroke, shareAt, strokeAt, topFix, weightTransfer,
+  checkSetup, forwardSwingEnd, forwardSwingStart, formatMetric, METRIC_INFO, movePhase, strokeForBounce, type Lines, type Vec2, newId, prepare, retypeStroke, shareAt, strokeAt, topFix, weightTransfer,
   type AnchorJoint, type Callout, type KeyPoint, type Phase, type Stroke, type StrokeType,
 } from '../core';
 import { STROKE_LABEL, STROKE_TYPES, fmtStamp, fmtTime } from '../labels';
@@ -11,6 +11,7 @@ import { saveFile, slug } from '../render/files';
 import { drawCourtOverlay, fromCanvas } from '../render/court';
 import { CourtPanel } from './CourtPanel';
 import { SetupBadge } from './FilmingGuide';
+import { ContactReading, FocusCard, PowerSequence } from './Insights';
 import { drawCallouts, drawSkeleton, drawTrail, drawVideo, fullCrop, type LabelBox, type View } from '../render/overlay';
 import { FrameGrabber } from '../render/grabber';
 import { canExportVideo, exportCarousel, exportPdf, exportVideo, renderCard, type CardContext } from '../render/export';
@@ -53,6 +54,7 @@ export function SessionView({ id }: { id: string }) {
   const boxes = useRef<LabelBox[]>([]);
   const drag = useRef<{ id: string; offX: number; offY: number; ax: number; ay: number } | null>(null);
   const playUntil = useRef<number | null>(null);
+  const thenPlay = useRef<(() => void) | null>(null);
   const grabber = useRef<FrameGrabber>();
 
   useEffect(() => {
@@ -168,6 +170,9 @@ export function SessionView({ id }: { id: string }) {
     if (playUntil.current !== null && i >= playUntil.current) {
       v.pause();
       playUntil.current = null;
+      const next = thenPlay.current;
+      thenPlay.current = null;
+      if (next) { next(); return; }
     }
     setFrame(i);
     draw();
@@ -192,6 +197,24 @@ export function SessionView({ id }: { id: string }) {
       v.playbackRate = rate;
       v.play();
     } else v.pause();
+  };
+
+  /** Whole stroke at full speed, then the forward swing again at half speed with its path traced. */
+  const playPath = (st: Stroke) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = frameToTime(st.startFrame);
+    v.playbackRate = 1;
+    setRate(1);
+    playUntil.current = st.endFrame;
+    thenPlay.current = () => {
+      v.currentTime = frameToTime(Math.max(st.startFrame, forwardSwingStart(st) - 2));
+      v.playbackRate = 0.5;
+      setRate(0.5);
+      playUntil.current = Math.min(st.endFrame, forwardSwingEnd(st) + 2);
+      v.play();
+    };
+    v.play();
   };
 
   const playStroke = (st: Stroke) => {
@@ -427,6 +450,7 @@ export function SessionView({ id }: { id: string }) {
               ))}
             </div>
             {stroke && <button onClick={() => playStroke(stroke)}>Play stroke in slow motion</button>}
+            {stroke && <button onClick={() => playPath(stroke)} title="Full speed, then the forward swing at half speed">Swing path replay</button>}
             <span className="time">{fmtStamp(frameToTime(frame))} · frame {frame + 1}/{nFrames}</span>
           </div>
 
@@ -502,6 +526,10 @@ export function SessionView({ id }: { id: string }) {
                   })}
                 </div>
               </div>
+
+              <FocusCard stroke={stroke} />
+              <ContactReading stroke={stroke} rules={rules} hand={player.hand} />
+              <PowerSequence prepared={prepared} stroke={stroke} frame={frame} onSeek={seekFrame} />
 
               {coach && insideStroke && !phaseHere && (
                 <div className="move-phase">

@@ -50,6 +50,9 @@ export const DEFAULT_RULES: Rule[] = [
   { id: 'gs-chain', strokes: GS, phase: 'contact', metric: 'chainSequence', min: 2, good: 'Hips, then trunk, then arm, then hand: power flows up the chain.', fixLow: 'Start the swing with the hips; let the trunk pull the arm through, not the other way round.', anchor: 'hips', goodLabel: 'Kinetic chain', fixLabel: 'Hips lead the swing', enabled: true },
   { id: 'gs-body-power', strokes: GS, phase: 'contact', metric: 'bodyPower', min: 35, good: 'Much of the hand speed comes from body rotation, not just the arm.', fixLow: 'You are mostly arming the ball; rotate your hips and trunk through the shot.', anchor: 'shoulders', goodLabel: 'Body power', fixLabel: 'Use the body, not the arm', enabled: true },
 
+  // Preparation timing: turn early so the swing is organised by the bounce.
+  { id: 'gs-prep', strokes: GS, phase: 'unit-turn', metric: 'prepLead', min: 0.35, good: 'Turn starts early, leaving time to organise contact.', fixLow: 'Start your turn as soon as you read the ball, so you are set by the bounce instead of rushing.', anchor: 'shoulders', goodLabel: 'Early preparation', fixLabel: 'Prepare earlier', enabled: true },
+
   // Serve body power
   { id: 'sv-legs', strokes: SV, phase: 'contact', metric: 'legDrive', min: 20, good: 'Legs drive up into the ball.', fixLow: 'Bend, then explode up with your legs into the serve.', anchor: 'knee', goodLabel: 'Leg drive', fixLabel: 'Drive up with legs', enabled: true },
   { id: 'sv-separation', strokes: SV, phase: 'trophy', metric: 'hipShoulderSep', min: 15, good: 'Shoulders coiled past the hips in the trophy position.', fixLow: 'Turn your shoulders more than your hips in the trophy position.', anchor: 'hips', goodLabel: 'Coiled trunk', fixLabel: 'Coil shoulders', enabled: true },

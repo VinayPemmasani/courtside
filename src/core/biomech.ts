@@ -6,6 +6,7 @@ import type { Handedness, Metrics, PhaseId, PoseFrame, Stroke, Vec3 } from './ty
 import { LM, sides } from './landmarks';
 import { jointAngle, mid, sub, unwrap, yaw } from './geometry';
 import { centreOfMass, transferSummary, weightTransfer } from './weight';
+import { estimateRacket } from './racket';
 
 export type Spin = 'topspin' | 'flat' | 'slice';
 
@@ -128,18 +129,9 @@ export function biomechanics(frames: PoseFrame[], stroke: Stroke, hand: Handedne
   if (ts) set('contact', 'weightShift', (ts.drive - ts.load) * 100);
 
   // Kinetic chain: peak speeds of each link between the coil and just after contact.
-  const lo = Math.max(1, coil);
-  const hi = Math.min(frames.length - 2, contact + Math.max(1, Math.round(0.05 * fps)));
-  const hips = peakIn(lo, hi, (i) => Math.abs(rate((j) => hipYaw[j], i, fps)));
-  const trunk = peakIn(lo, hi, (i) => Math.abs(rate((j) => shoulderYaw[j], i, fps)));
-  const elbowAng = (i: number) => { const w = W(i); return w ? jointAngle(w[dom.shoulder], w[dom.elbow], w[dom.wrist]) : NaN; };
-  const elbow = peakIn(lo, hi, (i) => rate(elbowAng, i, fps));
-  const handSp = peakIn(lo, hi, (i) => {
-    const p = W(i - 1), n = W(i + 1);
-    if (!p || !n) return NaN;
-    const d = sub(sub(n[dom.wrist], hipMid(n)), sub(p[dom.wrist], hipMid(p)));
-    return (Math.hypot(d.x, d.y, d.z) * fps) / 2;
-  });
+  const chain = chainCurves(frames, stroke, hand, fps, shoulderYaw, hipYaw);
+  const peak = (id: ChainLinkId) => chain.links.find((l) => l.id === id)?.peak;
+  const hips = peak('hips'), trunk = peak('trunk'), elbow = peak('elbow'), handSp = peak('hand');
   out.chainPeaks = { hips: hips?.frame, trunk: trunk?.frame, elbow: elbow?.frame, hand: handSp?.frame };
   set('contact', 'hipSpeed', hips?.value);
   set('contact', 'trunkSpeed', trunk?.value);
@@ -149,6 +141,20 @@ export function biomechanics(frames: PoseFrame[], stroke: Stroke, hand: Handedne
     for (let k = 0; k < 3; k++) if (order[k]!.frame <= order[k + 1]!.frame) ok++;
     set('contact', 'chainSequence', ok);
   }
+
+  // Racket face vs swing path at contact (groundstrokes). The face comes from the palm, so it is an estimate.
+  const path = out.byPhase.contact?.swingPath;
+  if (path !== undefined && wa && wc) {
+    const face = faceTiltAt(frames, contact, hand, fps);
+    if (face !== undefined) {
+      set('contact', 'faceTilt', face);
+      set('contact', 'pathFaceGap', path + face);
+    }
+  }
+
+  // Preparation: how long before contact the unit turn was under way.
+  const unitTurn = ph('unit-turn');
+  if (unitTurn !== undefined && stroke.type !== 'serve') set('unit-turn', 'prepLead', (contact - unitTurn) / fps);
 
   // Body vs arm: hand velocity at contact explained by trunk rotation about the vertical axis.
   const p = W(contact - 1), n = W(contact + 1);
@@ -165,4 +171,82 @@ export function biomechanics(frames: PoseFrame[], stroke: Stroke, hand: Handedne
     }
   }
   return out;
+}
+
+export type ChainLinkId = 'hips' | 'trunk' | 'elbow' | 'hand';
+
+export interface ChainLink {
+  id: ChainLinkId;
+  label: string;
+  unit: string;
+  /** Speed per frame from `from` to `to` (NaN where the pose is missing). */
+  values: number[];
+  peak?: { frame: number; value: number };
+}
+
+export interface ChainCurves {
+  from: number;
+  to: number;
+  contact: number;
+  links: ChainLink[];
+}
+
+/**
+ * Speed of each link of the kinetic chain through the forward swing: hip rotation, trunk rotation
+ * (°/s), elbow extension (°/s) and hand speed (m/s). Peaks are searched from the coil to just after
+ * contact; a good chain peaks in that order, each link handing speed on to the next.
+ */
+export function chainCurves(frames: PoseFrame[], stroke: Stroke, hand: Handedness, fps: number, shoulderYaw: number[], hipYaw: number[]): ChainCurves {
+  const { dom } = sides(hand);
+  const ph = (id: PhaseId) => stroke.phases.find((p) => p.id === id)?.frame;
+  const contact = stroke.contactFrame;
+  const coil = ph('backswing') ?? ph('trophy') ?? Math.round(((ph('ready') ?? stroke.startFrame) + contact) / 2);
+  const W = (i: number) => frames[i]?.world ?? null;
+  const lo = Math.max(1, coil);
+  const hi = Math.min(frames.length - 2, contact + Math.max(1, Math.round(0.05 * fps)));
+  const from = Math.max(1, Math.min(lo, ph('unit-turn') ?? lo));
+  const to = Math.min(frames.length - 2, Math.max(hi, ph('follow-through') ?? hi));
+  const elbowAng = (i: number) => { const w = W(i); return w ? jointAngle(w[dom.shoulder], w[dom.elbow], w[dom.wrist]) : NaN; };
+  const speed: Record<ChainLinkId, (i: number) => number> = {
+    hips: (i) => Math.abs(rate((j) => hipYaw[j], i, fps)),
+    trunk: (i) => Math.abs(rate((j) => shoulderYaw[j], i, fps)),
+    elbow: (i) => rate(elbowAng, i, fps),
+    hand: (i) => {
+      const p = W(i - 1), n = W(i + 1);
+      if (!p || !n) return NaN;
+      const d = sub(sub(n[dom.wrist], hipMid(n)), sub(p[dom.wrist], hipMid(p)));
+      return (Math.hypot(d.x, d.y, d.z) * fps) / 2;
+    },
+  };
+  const meta: { id: ChainLinkId; label: string; unit: string }[] = [
+    { id: 'hips', label: 'Hips', unit: '°/s' },
+    { id: 'trunk', label: 'Trunk', unit: '°/s' },
+    { id: 'elbow', label: 'Arm', unit: '°/s' },
+    { id: 'hand', label: 'Hand', unit: 'm/s' },
+  ];
+  const links = meta.map((m): ChainLink => {
+    const f = speed[m.id];
+    const values: number[] = [];
+    for (let i = from; i <= to; i++) values.push(f(i));
+    return { ...m, values, peak: peakIn(lo, hi, f) ?? undefined };
+  });
+  return { from, to, contact, links };
+}
+
+/**
+ * Estimated racket-face tilt at contact in degrees: + means the strings face down toward the court
+ * (closed), - means they face up (open). The face is taken as the palm plane, oriented toward the
+ * direction the hand is travelling.
+ */
+export function faceTiltAt(frames: PoseFrame[], i: number, hand: Handedness, fps: number): number | undefined {
+  const { dom } = sides(hand);
+  const w = frames[i]?.world, p = frames[i - 1]?.world, n = frames[i + 1]?.world;
+  const r = estimateRacket(w ?? null, hand);
+  if (!r?.face || !p || !n) return undefined;
+  const v = sub(sub(n[dom.wrist], hipMid(n)), sub(p[dom.wrist], hipMid(p)));
+  if (Math.hypot(v.x, v.y, v.z) * fps < 0.5) return undefined;
+  const sign = r.face.x * v.x + r.face.y * v.y + r.face.z * v.z < 0 ? -1 : 1;
+  const f = { x: r.face.x * sign, y: r.face.y * sign, z: r.face.z * sign };
+  const tilt = (Math.atan2(f.y, Math.hypot(f.x, f.z)) * 180) / Math.PI;
+  return Number.isFinite(tilt) ? tilt : undefined;
 }
