@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
-  anchorIndices, ballFlight, centreOfMass, COURT, deeperKnee, estimateRacket, shareAt, strokeSpace, toCourt,
+  anchorIndices, ballFlight, centreOfMass, COURT, deeperKnee, dirToCourt, estimateRacket, shareAt, strokeSpace, toCourt,
   type AnchorJoint, type BallFlight, type Handedness, type PoseFrame, type Status, type Stroke, type StrokeSpace, type Vec3, type WeightTransfer,
 } from '../core';
 import { alongPath, alongSegment, bodyDiscs, type Disc } from './layout';
@@ -43,6 +43,11 @@ export interface SceneInput {
   orbit?: number;
   /** Camera distance factor: 1 is the usual view, smaller moves in on the player. */
   zoom?: number;
+  /**
+   * 'video' (default): the 3D camera stands where the real camera stood, so the figure matches the
+   * clip's angle, facing and lean. 'coach': behind the player looking down the court to the net.
+   */
+  view?: 'video' | 'coach';
 }
 
 const v3 = (p: Vec3) => new THREE.Vector3(p.x, p.y, p.z);
@@ -301,15 +306,10 @@ export class StudioScene {
     const P = (i: number) => v3(toCourt(w![i], space));
     if (w) this.pose(w, P, space, input.hand);
 
-    // Camera behind and above the player, looking past them to the net.
     const o = space.origin;
-    const yaw = input.orbit ?? 0;
     const z = input.zoom ?? 1;
-    const back = 5.2 * z, height = 0.9 + 1.7 * z;
-    this.camera.position.set(o.x + Math.sin(yaw) * back + 0.5, height, o.z + Math.cos(yaw) * back);
-    // z = 1 looks past the player to the net; by z = 0.4 the aim is on the player's chest.
-    const t = Math.min(1, Math.max(0, (z - 0.4) / 0.6));
-    this.camera.lookAt(o.x * (0.6 * t + (1 - t)), 0.15 * t + 1.0 * (1 - t), o.z - 6.5 * t);
+    if ((input.view ?? 'video') === 'video') this.videoCamera(space, input.orbit ?? 0, z);
+    else this.coachCamera(space, input.orbit ?? 0, z);
 
     this.racketPath(input, space);
     this.ballAndTrail(input, flight);
@@ -317,6 +317,38 @@ export class StudioScene {
     this.weightGlow(input, P);
     (this.scene.getObjectByName('under') as THREE.PointLight).position.set(o.x, 0.3, o.z + 0.4);
     this.composer.render();
+  }
+
+  /**
+   * Put the 3D camera where the filming camera was. Pose world landmarks are in the camera's own
+   * axes, so "toward the camera" and "camera up" map straight onto the court; the levelling in
+   * StrokeSpace keeps the court flat while the view keeps the camera's real tilt.
+   */
+  private videoCamera(space: StrokeSpace, orbit: number, zoom: number) {
+    const toCam = v3(dirToCourt({ x: 0, y: 0, z: -1 }, space)).normalize();
+    const camUp = v3(dirToCourt({ x: 0, y: -1, z: 0 }, space)).normalize();
+    if (orbit) { toCam.applyAxisAngle(UP, orbit); camUp.applyAxisAngle(UP, orbit); }
+    // Hips are the pose origin; aim a little above them so the whole body sits in frame.
+    const target = new THREE.Vector3(space.origin.x, Math.max(0.6, space.floor * 0.95), space.origin.z);
+    // Distance that makes a ~1.75 m player fill about 62% of the frame height.
+    const half = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const d = (1.75 / (0.62 * 2 * half)) * zoom;
+    this.camera.position.copy(target).addScaledVector(toCam, d);
+    // Never below the court surface.
+    this.camera.position.y = Math.max(0.25, this.camera.position.y);
+    this.camera.up.copy(camUp);
+    this.camera.lookAt(target);
+  }
+
+  /** Behind and above the player, looking past them to the net. */
+  private coachCamera(space: StrokeSpace, orbit: number, z: number) {
+    const o = space.origin;
+    const back = 5.2 * z, height = 0.9 + 1.7 * z;
+    this.camera.up.set(0, 1, 0);
+    this.camera.position.set(o.x + Math.sin(orbit) * back + 0.5, height, o.z + Math.cos(orbit) * back);
+    // z = 1 looks past the player to the net; by z = 0.4 the aim is on the player's chest.
+    const t = Math.min(1, Math.max(0, (z - 0.4) / 0.6));
+    this.camera.lookAt(o.x * (0.6 * t + (1 - t)), 0.15 * t + 1.0 * (1 - t), o.z - 6.5 * t);
   }
 
   private pose(w: Vec3[], P: (i: number) => THREE.Vector3, space: StrokeSpace, hand: Handedness) {

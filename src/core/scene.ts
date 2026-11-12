@@ -18,6 +18,50 @@ export interface StrokeSpace {
   floor: number;
   /** Where the hips stand on the court. */
   origin: Vec3;
+  /**
+   * Row-major 3x3 rotation that levels the camera's view (y up, z toward the camera) so the player
+   * stands upright on the court even when the camera was tilted. Identity when absent.
+   */
+  level?: number[];
+}
+
+const I3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+const mul = (m: number[], v: Vec3): Vec3 => ({ x: m[0] * v.x + m[1] * v.y + m[2] * v.z, y: m[3] * v.x + m[4] * v.y + m[5] * v.z, z: m[6] * v.x + m[7] * v.y + m[8] * v.z });
+/** Pose world point (y down, z away from the camera) in camera axes with y up and z toward the camera, levelled. */
+const up = (p: Vec3, level?: number[]): Vec3 => mul(level ?? I3, { x: p.x, y: -p.y, z: -p.z });
+
+/**
+ * The rotation that makes the player's average standing axis (ankles to shoulders) vertical,
+ * capped at 30°. Single-camera world landmarks follow the camera's tilt, so without this a
+ * camera pointing down makes the player look like they are falling over on the court.
+ */
+export function levelFor(frames: PoseFrame[], from: number, to: number): number[] {
+  let ax = 0, ay = 0, az = 0;
+  for (let i = Math.max(0, from); i <= Math.min(frames.length - 1, to); i++) {
+    const w = frames[i]?.world;
+    if (!w) continue;
+    const a = up({ x: (w[27].x + w[28].x) / 2, y: (w[27].y + w[28].y) / 2, z: (w[27].z + w[28].z) / 2 });
+    const b = up({ x: (w[11].x + w[12].x) / 2, y: (w[11].y + w[12].y) / 2, z: (w[11].z + w[12].z) / 2 });
+    const d = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    const l = Math.hypot(d.x, d.y, d.z);
+    if (l < 0.3) continue;
+    ax += d.x / l; ay += d.y / l; az += d.z / l;
+  }
+  const l = Math.hypot(ax, ay, az);
+  if (l < 1e-6 || ay <= 0) return I3;
+  const u = { x: ax / l, y: ay / l, z: az / l };
+  // Rotate u onto (0,1,0): axis = u × y, angle = acos(u·y), capped.
+  let k = { x: -u.z, y: 0, z: u.x };
+  const s = Math.hypot(k.x, k.z);
+  if (s < 1e-6) return I3;
+  k = { x: k.x / s, y: 0, z: k.z / s };
+  const ang = Math.min(Math.acos(Math.min(1, u.y)), (30 * Math.PI) / 180);
+  const c = Math.cos(ang), n = Math.sin(ang), t = 1 - c;
+  return [
+    t * k.x * k.x + c, t * k.x * k.y - n * k.z, t * k.x * k.z + n * k.y,
+    t * k.x * k.y + n * k.z, t * k.y * k.y + c, t * k.y * k.z - n * k.x,
+    t * k.x * k.z - n * k.y, t * k.y * k.z + n * k.x, t * k.z * k.z + c,
+  ];
 }
 
 /** Player's spot: just behind the baseline, a little to the deuce side, like a rally or a serve. */
@@ -32,29 +76,41 @@ const FEET = [27, 28, 29, 30, 31, 32];
 export function strokeSpace(frames: PoseFrame[], stroke: { startFrame: number; endFrame: number; contactFrame: number }, hand: Handedness): StrokeSpace {
   const { dom } = sides(hand);
   const c = stroke.contactFrame;
+  const level = levelFor(frames, stroke.startFrame, stroke.endFrame);
   const a = frames[Math.max(stroke.startFrame, c - 2)]?.world;
   const b = frames[Math.min(stroke.endFrame, c + 2)]?.world;
   // Default: swinging away from the camera, as when filmed from behind.
   let dx = 0, dz = 1;
   if (a && b) {
-    const vx = b[dom.wrist].x - a[dom.wrist].x;
-    const vz = b[dom.wrist].z - a[dom.wrist].z;
+    const A = up(a[dom.wrist], level), B = up(b[dom.wrist], level);
+    const vx = B.x - A.x;
+    // Back in pose axes (z away from the camera) for the yaw below.
+    const vz = -(B.z - A.z);
     if (Math.hypot(vx, vz) > 0.05) { dx = vx; dz = vz; }
   }
   // In scene axes the swing is (dx, −dz); turn it to (0, −1).
   const yaw = Math.atan2(-dx, dz);
   const first = frames[stroke.startFrame]?.world ?? frames.find((f) => f.world)?.world;
-  const floor = first ? Math.max(...FEET.map((i) => first[i].y)) : 0.9;
-  return { yaw, floor, origin: PLAYER_SPOT };
+  // Floor: the lowest foot at the start, measured along the levelled vertical (as a pose-style "down" value).
+  const floor = first ? Math.max(...FEET.map((i) => -up(first[i], level).y)) : 0.9;
+  return { yaw, floor, origin: PLAYER_SPOT, level };
 }
 
 /** A pose world point in court coordinates. */
 export function toCourt(p: Vec3, s: StrokeSpace): Vec3 {
-  const x = p.x;
-  const z = -p.z;
+  const q = up(p, s.level);
+  const x = q.x;
+  const z = q.z;
   const c = Math.cos(s.yaw);
   const n = Math.sin(s.yaw);
-  return { x: s.origin.x + x * c - z * n, y: s.floor - p.y, z: s.origin.z + x * n + z * c };
+  return { x: s.origin.x + x * c - z * n, y: s.floor + q.y, z: s.origin.z + x * n + z * c };
+}
+
+/** A direction given in pose axes (y down, z away from the camera), turned into court axes. */
+export function dirToCourt(d: Vec3, s: StrokeSpace): Vec3 {
+  const a = toCourt({ x: 0, y: 0, z: 0 }, s);
+  const b = toCourt(d, s);
+  return { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
 }
 
 /** Quadratic Bézier point. */
