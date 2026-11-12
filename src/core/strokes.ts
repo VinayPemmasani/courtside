@@ -50,7 +50,9 @@ export function detectStrokes(frames: PoseFrame[], fps: number, hand: Handedness
   for (let i = 1; i < sp.length - 1; i++) {
     const v = sp[i];
     if (Number.isNaN(v) || v < threshold) continue;
-    if (v >= (sp[i - 1] || 0) && v > (sp[i + 1] || 0)) peaks.push(i);
+    if (!(v >= (sp[i - 1] || 0) && v > (sp[i + 1] || 0))) continue;
+    // A real swing builds and fades over several frames; a one-frame burst is a tracking jump.
+    if (sustained(sp, i, fps)) peaks.push(i);
   }
   // Keep the strongest peak within each minGap window.
   peaks.sort((a, b) => sp[b] - sp[a]);
@@ -69,6 +71,14 @@ export function detectStrokes(frames: PoseFrame[], fps: number, hand: Handedness
     out.push({ start, end, contact: c, peakSpeed: sp[c] });
   });
   return out;
+}
+
+/** True when the hand is moving fast for for a few frames around frame i, not just on one frame. */
+function sustained(sp: number[], i: number, fps: number) {
+  const half = Math.max(1, Math.round(0.03 * fps));
+  let fast = 0;
+  for (let j = i - half; j <= i + half; j++) if ((sp[j] ?? 0) >= sp[i] * 0.45) fast++;
+  return fast >= 2 * half + 1 - (half > 1 ? 1 : 0);
 }
 
 /** Window around a hand-marked contact frame. */

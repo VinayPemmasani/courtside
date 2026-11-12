@@ -68,7 +68,18 @@ describe('several strokes in one clip', () => {
     const a = synthesize(FOREHAND, fps);
     const b = synthesize(BACKHAND_1H, fps);
     const c = synthesize(FOREHAND, fps);
-    const all = [...a, ...b, ...c].map((f, i) => ({ ...f, t: i / fps }));
+    // Players don't teleport between shots: blend 0.8 s (a recovery) from the end of one stroke into the next.
+    const blend = (x: PoseFrame[], y: PoseFrame[]) => {
+      const n = Math.round(0.8 * fps);
+      const A = x[x.length - 1].world!, B = y[0].world!;
+      const mid = Array.from({ length: n }, (_, k) => {
+        const u = (k + 1) / (n + 1);
+        const s = u * u * (3 - 2 * u);
+        return { t: 0, image: y[0].image, world: A.map((p, j) => ({ x: p.x + (B[j].x - p.x) * s, y: p.y + (B[j].y - p.y) * s, z: p.z + (B[j].z - p.z) * s })) };
+      });
+      return [...x, ...mid];
+    };
+    const all = [...blend(a, b), ...blend(b, c), ...c].map((f, i) => ({ ...f, t: i / fps }));
     const types = run(all).strokes.map((s) => s.type);
     expect(types).toEqual(['forehand', 'backhand-1h', 'forehand']);
   });

@@ -116,9 +116,11 @@ export function ImportView({ playerId }: { playerId: string }) {
             <label>
               Pose model
               <div className="seg">
+                <button className={model === 'heavy' ? 'on' : ''} onClick={() => setModel('heavy')}>Best</button>
                 <button className={model === 'full' ? 'on' : ''} onClick={() => setModel('full')}>Accurate</button>
                 <button className={model === 'lite' ? 'on' : ''} onClick={() => setModel('lite')}>Fast</button>
               </div>
+              <small className="muted">Best tracks limbs most closely but takes about twice as long.</small>
             </label>
             <p className="muted">{samples} frames will be analysed for {player?.name} ({player?.hand}-handed).</p>
             {error && <p className="error">{error}</p>}

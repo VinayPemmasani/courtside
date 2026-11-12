@@ -1,7 +1,8 @@
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 import type { PoseFrame } from '../core';
 
-export type ModelSize = 'full' | 'lite';
+/** lite = fastest, full = default, heavy = most accurate (slowest; falls back to full if missing). */
+export type ModelSize = 'full' | 'lite' | 'heavy';
 
 let cached: { size: ModelSize; landmarker: PoseLandmarker } | null = null;
 
@@ -43,7 +44,13 @@ async function getLandmarker(size: ModelSize): Promise<PoseLandmarker> {
   try {
     landmarker = await make('GPU');
   } catch {
-    landmarker = await make('CPU');
+    try {
+      landmarker = await make('CPU');
+    } catch (err) {
+      // The heavy model is an optional download; use the full one when it is not there.
+      if (size === 'heavy') return getLandmarker('full');
+      throw err;
+    }
   }
   cached = { size, landmarker };
   return landmarker;

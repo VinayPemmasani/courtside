@@ -1,12 +1,18 @@
-import type { PoseFrame, Vec3 } from './types';
-import { LANDMARK_COUNT } from './landmarks';
+import type { PoseFrame } from './types';
+import { copyFrames, fillHidden, fixSwaps, removeSpikes, smoothWorld } from './tracking';
 
 /**
- * Fill short gaps (up to `maxGap` frames) in world landmarks by linear interpolation,
- * then smooth with a centred moving average. Image landmarks are interpolated the same way.
+ * Clean a clip's pose before measuring or drawing it: undo left/right swaps, drop one-frame
+ * spikes, re-fill joints the camera could not see, fill short gaps (up to `maxGap` frames) of
+ * missing poses, then (when `window` > 0) smooth with a zero-phase adaptive filter.
+ * Constant bone lengths (steadyBones) are applied only for the 3D figure, so measurements keep
+ * what the camera saw. See tracking.ts. Image landmarks are swap-fixed and gap-filled only.
  */
 export function cleanFrames(frames: PoseFrame[], maxGap = 6, window = 2): PoseFrame[] {
-  const out = frames.map((f) => ({ ...f, world: f.world?.map((p) => ({ ...p })) ?? null, image: f.image?.map((p) => ({ ...p })) ?? null }));
+  const out = copyFrames(frames);
+  fixSwaps(out);
+  removeSpikes(out);
+  fillHidden(out);
   // Interpolate gaps.
   let last = -1;
   for (let i = 0; i < out.length; i++) {
@@ -23,22 +29,8 @@ export function cleanFrames(frames: PoseFrame[], maxGap = 6, window = 2): PoseFr
     last = i;
   }
   if (window <= 0) return out;
-  // Moving average over available neighbours (world only; image stays faithful to the video).
-  const smoothed = out.map((f, i) => {
-    if (!f.world) return f;
-    const acc: Vec3[] = Array.from({ length: LANDMARK_COUNT }, () => ({ x: 0, y: 0, z: 0 }));
-    let n = 0;
-    for (let j = Math.max(0, i - window); j <= Math.min(out.length - 1, i + window); j++) {
-      const w = out[j].world;
-      if (!w) continue;
-      for (let k = 0; k < LANDMARK_COUNT; k++) {
-        acc[k].x += w[k].x; acc[k].y += w[k].y; acc[k].z += w[k].z;
-      }
-      n++;
-    }
-    return { ...f, world: acc.map((p) => ({ x: p.x / n, y: p.y / n, z: p.z / n })) };
-  });
-  return smoothed;
+  smoothWorld(out);
+  return out;
 }
 
 function lerpPoints<T extends { x: number; y: number; z?: number; v?: number }>(a: T[], b: T[], k: number): T[] {
