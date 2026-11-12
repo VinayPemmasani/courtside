@@ -20,8 +20,6 @@ const LEFT_ARM = [13, 15, 17, 19, 21];
 const RIGHT_ARM = [14, 16, 18, 20, 22];
 const LEFT_LEG = [25, 27, 29, 31];
 const RIGHT_LEG = [26, 28, 30, 32];
-const LEFT_ALL = [1, 2, 3, 7, 9, 11, 23, ...LEFT_ARM, ...LEFT_LEG];
-const RIGHT_ALL = [4, 5, 6, 8, 10, 12, 24, ...RIGHT_ARM, ...RIGHT_LEG];
 
 const d2 = (a: P3, b: P3) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2;
 
@@ -45,8 +43,8 @@ function swapIn<T>(arr: T[] | null, L: number[], R: number[]) {
 }
 
 /**
- * Undo left/right label swaps by continuity with the previous frame: first the whole body
- * (a front/back flip), then each arm pair and each leg pair. A swap is only taken when it fits
+ * Undo left/right label swaps by continuity with the previous frame, for each arm pair and each
+ * leg pair. A swap is only taken when it fits
  * the previous frame much better, so a genuine crossing of the legs is left alone.
  * Returns how many swaps were made.
  */
@@ -57,7 +55,9 @@ export function fixSwaps(frames: PoseFrame[]): number {
     const w = f.world;
     if (!w) { prev = null; continue; }
     if (prev) {
-      for (const [L, R, floor] of [[LEFT_ALL, RIGHT_ALL, 0.02], [LEFT_ARM, RIGHT_ARM, 0.01], [LEFT_LEG, RIGHT_LEG, 0.01]] as const) {
+      // Arms and legs only: a whole-body flip can't be undone by relabelling (the depth flips too),
+      // and relabelling it would mirror the player.
+      for (const [L, R, floor] of [[LEFT_ARM, RIGHT_ARM, 0.01], [LEFT_LEG, RIGHT_LEG, 0.01]] as const) {
         const { keep, swap } = swapCost(prev, w, L as number[], R as number[]);
         if (keep > floor && swap < keep * 0.45) {
           swapIn(w, L as number[], R as number[]);
