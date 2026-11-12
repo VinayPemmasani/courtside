@@ -44,10 +44,14 @@ export interface SceneInput {
   /** Camera distance factor: 1 is the usual view, smaller moves in on the player. */
   zoom?: number;
   /**
-   * 'video' (default): the 3D camera stands where the real camera stood, so the figure matches the
-   * clip's angle, facing and lean. 'coach': behind the player looking down the court to the net.
+   * 'footage' (default when `video` is given): the 3D body is built on the tracked dots and seen
+   * exactly as the camera filmed it, same position, size and angle.
+   * 'video': a 3D camera placed where the real camera stood, on the virtual court.
+   * 'coach' (default otherwise): behind the player looking down the court to the net.
    */
-  view?: 'video' | 'coach';
+  view?: 'footage' | 'video' | 'coach';
+  /** Video frame size in pixels; needed for the footage view. */
+  video?: { width: number; height: number };
 }
 
 const v3 = (p: Vec3) => new THREE.Vector3(p.x, p.y, p.z);
@@ -60,6 +64,13 @@ export class StudioScene {
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
   private athlete = new Athlete();
+  /** Court, net, grid and shadow catcher: hidden in the footage view, where they would not line up with the video. */
+  private courtGroup = new THREE.Group();
+  /** Front-on camera for the footage view: the video frame itself, with no perspective of our own. */
+  private ortho = new THREE.OrthographicCamera(0, 1, 0, -1, 0.1, 100);
+  private fog = new THREE.Fog('#05070c', 14, 38);
+  private renderPass!: RenderPass;
+  private footageCache = new WeakMap<PoseFrame[], { key: string; frames: PoseFrame[]; w: number; h: number }>();
   /** Frames with constant limb lengths, per input clip, so the figure doesn't stretch. */
   private steady = new WeakMap<PoseFrame[], PoseFrame[]>();
   private racket = new THREE.Group();
@@ -86,7 +97,7 @@ export class StudioScene {
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environmentIntensity = 0.3;
     this.scene.background = new THREE.Color('#05070c');
-    this.scene.fog = new THREE.Fog('#05070c', 14, 38);
+    this.scene.fog = this.fog;
 
     this.buildCourt();
     this.buildLights();
@@ -113,7 +124,8 @@ export class StudioScene {
 
     // Multisampled target: thin court lines stay solid instead of breaking into dashes at a distance.
     this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(width, height, { samples: 4, type: THREE.HalfFloatType }));
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(this.renderPass);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.38, 0.25, 1.05);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -154,6 +166,7 @@ export class StudioScene {
   private buildLights() {
     this.scene.add(new THREE.HemisphereLight('#c8d0ff', '#05070c', 0.45));
     const key = new THREE.DirectionalLight('#ffffff', 1.5);
+    key.name = 'key';
     key.position.set(-4, 9, 18);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -173,21 +186,22 @@ export class StudioScene {
   }
 
   private buildCourt() {
+    this.scene.add(this.courtGroup);
     // An unlit near-black floor, so the court reads like the app's dark panels, with shadows laid on a separate catcher.
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), new THREE.MeshBasicMaterial({ color: '#07090f' }));
     floor.rotation.x = -Math.PI / 2;
-    this.scene.add(floor);
+    this.courtGroup.add(floor);
     const shadows = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.6 }));
     shadows.rotation.x = -Math.PI / 2;
     shadows.position.y = 0.001;
     shadows.receiveShadow = true;
-    this.scene.add(shadows);
+    this.courtGroup.add(shadows);
     const grid = new THREE.GridHelper(80, 80, '#1b2232', '#121826');
     grid.position.y = 0.002;
     const gm = grid.material as THREE.LineBasicMaterial;
     gm.transparent = true;
     gm.opacity = 0.55;
-    this.scene.add(grid);
+    this.courtGroup.add(grid);
 
     const lineMat = new THREE.MeshBasicMaterial({ color: LINE, toneMapped: false });
     const line = (x0: number, z0: number, x1: number, z1: number) => {
@@ -196,7 +210,7 @@ export class StudioScene {
       m.rotation.x = -Math.PI / 2;
       m.rotation.z = -Math.atan2(x1 - x0, z1 - z0);
       m.position.set((x0 + x1) / 2, 0.006, (z0 + z1) / 2);
-      this.scene.add(m);
+      this.courtGroup.add(m);
     };
     const L = COURT.length / 2, D = COURT.doubles / 2, S = COURT.singles / 2, V = COURT.service;
     line(-D, -L, -D, L); line(D, -L, D, L); line(-S, -L, -S, L); line(S, -L, S, L);
@@ -209,17 +223,17 @@ export class StudioScene {
     for (const x of [-(D + 0.9), D + 0.9]) {
       const p = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, COURT.netPost, 8), post);
       p.position.set(x, COURT.netPost / 2, 0);
-      this.scene.add(p);
+      this.courtGroup.add(p);
     }
     const band = new THREE.Mesh(new THREE.BoxGeometry(COURT.doubles + 1.8, 0.05, 0.02), post);
     band.position.set(0, COURT.net, 0);
-    this.scene.add(band);
+    this.courtGroup.add(band);
     const pts: THREE.Vector3[] = [];
     const w = D + 0.9;
     for (let x = -w; x <= w + 1e-6; x += 0.25) pts.push(new THREE.Vector3(x, 0, 0), new THREE.Vector3(x, COURT.net, 0));
     for (let y = 0; y <= COURT.net + 1e-6; y += 0.15) pts.push(new THREE.Vector3(-w, y, 0), new THREE.Vector3(w, y, 0));
     const mesh = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#6c768b', transparent: true, opacity: 0.16 }));
-    this.scene.add(mesh);
+    this.courtGroup.add(mesh);
   }
 
   private spaceFor(input: SceneInput): { space: StrokeSpace; flight: BallFlight | null } {
@@ -242,7 +256,7 @@ export class StudioScene {
   /** Screen position (canvas pixels) of a pose world point in the last rendered frame. */
   project(p: Vec3): { x: number; y: number } | null {
     if (!this.current) return null;
-    const v = v3(toCourt(p, this.current.space)).project(this.camera);
+    const v = v3(toCourt(p, this.current.space)).project(this.activeCam);
     if (v.z > 1) return null;
     return { x: ((v.x + 1) / 2) * this.canvas.width, y: ((1 - v.y) / 2) * this.canvas.height };
   }
@@ -264,7 +278,7 @@ export class StudioScene {
     if (!this.current) return [];
     const { w, space } = this.current;
     const screen = (p: THREE.Vector3) => {
-      const v = p.clone().project(this.camera);
+      const v = p.clone().project(this.activeCam);
       return v.z > 1 ? null : { x: ((v.x + 1) / 2) * this.canvas.width, y: ((1 - v.y) / 2) * this.canvas.height };
     };
     const pts = w.map((p) => screen(v3(toCourt(p, space))));
@@ -296,7 +310,54 @@ export class StudioScene {
     return f;
   }
 
+  private get activeCam(): THREE.Camera {
+    return this.renderPass.camera;
+  }
+
+  /**
+   * Frames for the footage view: every landmark sits on its tracked dot (image x and y turned into
+   * metres with one scale for the whole clip) and keeps the model's depth. In pose axes, so the
+   * rest of the scene (racket, path, rings, labels) works unchanged with a plain identity space.
+   */
+  private footageFrames(frames: PoseFrame[], video: { width: number; height: number }) {
+    const key = `${video.width}x${video.height}`;
+    const hit = this.footageCache.get(frames);
+    if (hit && hit.key === key) return hit;
+    // Pixels per metre: the image spread of the body over its world spread, median over the clip.
+    const ks: number[] = [];
+    for (const f of frames) {
+      if (!f.world || !f.image) continue;
+      let mi = { x: 0, y: 0 }, mw = { x: 0, y: 0 }, n = 0;
+      for (let j = 11; j < 33; j++) { mi.x += f.image[j].x * video.width; mi.y += f.image[j].y * video.height; mw.x += f.world[j].x; mw.y += f.world[j].y; n++; }
+      mi = { x: mi.x / n, y: mi.y / n }; mw = { x: mw.x / n, y: mw.y / n };
+      let si = 0, sw = 0;
+      for (let j = 11; j < 33; j++) {
+        si += (f.image[j].x * video.width - mi.x) ** 2 + (f.image[j].y * video.height - mi.y) ** 2;
+        sw += (f.world[j].x - mw.x) ** 2 + (f.world[j].y - mw.y) ** 2;
+      }
+      if (sw > 1e-4) ks.push(Math.sqrt(si / sw));
+    }
+    ks.sort((a, b) => a - b);
+    const k = ks.length ? ks[Math.floor(ks.length / 2)] : video.height / 2;
+    const out = frames.map((f) => ({
+      ...f,
+      world: f.world && f.image ? f.world.map((p, j) => ({ x: (f.image![j].x * video.width) / k, y: (f.image![j].y * video.height) / k, z: p.z })) : null,
+    }));
+    const res = { key, frames: out, w: video.width / k, h: video.height / k };
+    this.footageCache.set(frames, res);
+    return res;
+  }
+
   render(raw: SceneInput) {
+    const footage = (raw.view ?? (raw.video ? 'footage' : 'coach')) === 'footage' && raw.video;
+    this.courtGroup.visible = !footage;
+    this.glow.visible = false;
+    if (footage) return this.renderFootage(raw);
+    this.renderPass.camera = this.camera;
+    this.scene.fog = this.fog;
+    const key = this.scene.getObjectByName('key') as THREE.DirectionalLight;
+    key.position.set(-4, 9, 18);
+    key.target.position.set(1, 0, 12);
     const input = { ...raw, frames: this.steadyFrames(raw.frames) };
     const w = input.frames[input.i]?.world;
     const { space, flight } = this.spaceFor(input);
@@ -308,7 +369,7 @@ export class StudioScene {
 
     const o = space.origin;
     const z = input.zoom ?? 1;
-    if ((input.view ?? 'video') === 'video') this.videoCamera(space, input.orbit ?? 0, z);
+    if (input.view === 'video') this.videoCamera(space, input.orbit ?? 0, z);
     else this.coachCamera(space, input.orbit ?? 0, z);
 
     this.racketPath(input, space);
@@ -316,6 +377,47 @@ export class StudioScene {
     this.drawRings(input, P);
     this.weightGlow(input, P);
     (this.scene.getObjectByName('under') as THREE.PointLight).position.set(o.x, 0.3, o.z + 0.4);
+    this.composer.render();
+  }
+
+  /** Identity placement for the footage view: pose axes straight into the scene (y up, z toward the camera). */
+  private static FLAT: StrokeSpace = { yaw: 0, floor: 0, origin: { x: 0, y: 0, z: 0 } };
+
+  private renderFootage(raw: SceneInput) {
+    const ft = this.footageFrames(raw.frames, raw.video!);
+    const input: SceneInput = { ...raw, frames: ft.frames, ball: false };
+    const space = StudioScene.FLAT;
+    const w = input.frames[input.i]?.world;
+    this.athlete.group.visible = !!w;
+    this.racket.visible = !!w;
+    this.current = w ? { w, space } : null;
+    const P = (i: number) => v3(toCourt(w![i], space));
+    if (w) this.pose(w, P, space, input.hand, false);
+
+    // The video frame, front on: x right 0..w, y up 0..-h (image y runs down), filling the canvas.
+    const canvasAspect = this.canvas.width / this.canvas.height;
+    let fw = ft.w, fh = ft.h;
+    if (fw / fh < canvasAspect) fw = fh * canvasAspect; else fh = fw / canvasAspect;
+    const cx = ft.w / 2, cy = -ft.h / 2;
+    const zoom = input.zoom ?? 1;
+    Object.assign(this.ortho, { left: cx - (fw / 2) * zoom, right: cx + (fw / 2) * zoom, top: cy + (fh / 2) * zoom, bottom: cy - (fh / 2) * zoom });
+    this.ortho.position.set(0, 0, 50);
+    this.ortho.up.set(0, 1, 0);
+    this.ortho.lookAt(0, 0, 0);
+    this.ortho.updateProjectionMatrix();
+    this.renderPass.camera = this.ortho;
+    this.scene.fog = null;
+
+    // Light from the camera side, above and to the left, so the figure reads in the camera's view.
+    const c = w ? P(23).add(P(24)).multiplyScalar(0.5) : new THREE.Vector3(cx, cy, 0);
+    const key = this.scene.getObjectByName('key') as THREE.DirectionalLight | undefined;
+    if (key) { key.position.set(c.x - 3, c.y + 5, 8); key.target.position.copy(c); }
+    (this.scene.getObjectByName('under') as THREE.PointLight).position.set(c.x, c.y - 0.9, 1);
+
+    this.racketPath(input, space);
+    this.ballAndTrail(input, null);
+    this.drawRings(input, P, true);
+    this.footGlow.forEach((g) => (g.visible = false));
     this.composer.render();
   }
 
@@ -351,10 +453,10 @@ export class StudioScene {
     this.camera.lookAt(o.x * (0.6 * t + (1 - t)), 0.15 * t + 1.0 * (1 - t), o.z - 6.5 * t);
   }
 
-  private pose(w: Vec3[], P: (i: number) => THREE.Vector3, space: StrokeSpace, hand: Handedness) {
+  private pose(w: Vec3[], P: (i: number) => THREE.Vector3, space: StrokeSpace, hand: Handedness, onCourt = true) {
     // Keep the shoes on the court: lift the figure if tracking puts a foot below the floor.
     const lowest = Math.min(...[29, 30, 31, 32].map((i) => P(i).y));
-    const lift = lowest < 0.0 ? -lowest : 0;
+    const lift = onCourt && lowest < 0.0 ? -lowest : 0;
     this.athlete.group.position.y = lift;
     this.racket.position.y = lift;
     this.athlete.update(P);
@@ -421,7 +523,7 @@ export class StudioScene {
     this.scene.add(this.trail);
   }
 
-  private drawRings(input: SceneInput, P: (i: number) => THREE.Vector3) {
+  private drawRings(input: SceneInput, P: (i: number) => THREE.Vector3, frontOn = false) {
     for (const m of this.ringMeshes) { this.scene.remove(m); m.geometry.dispose(); }
     this.ringMeshes = [];
     const w = input.frames[input.i]?.world;
@@ -432,7 +534,8 @@ export class StudioScene {
       const big = r.anchor === 'shoulders' || r.anchor === 'hips';
       const m = new THREE.Mesh(new THREE.TorusGeometry(big ? 0.34 : 0.16, 0.008, 8, 64), new THREE.MeshBasicMaterial({ color: r.status === 'fix' ? RED : NEON, toneMapped: false }));
       m.position.copy(c);
-      m.rotation.x = Math.PI / 2;
+      // Flat on the ground plane for the court views; tipped toward the camera when seen front on.
+      m.rotation.x = frontOn ? Math.PI / 2 - 0.45 : Math.PI / 2;
       this.scene.add(m);
       this.ringMeshes.push(m);
     }
