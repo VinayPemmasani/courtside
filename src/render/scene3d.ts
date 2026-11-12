@@ -9,9 +9,11 @@ import {
   type AnchorJoint, type BallFlight, type Handedness, type PoseFrame, type Status, type Stroke, type StrokeSpace, type Vec3, type WeightTransfer,
 } from '../core';
 import { alongPath, alongSegment, bodyDiscs, type Disc } from './layout';
+import { copyFrames, steadyBones } from '../core/tracking';
+import { Athlete } from './athlete';
 
 /**
- * The 3D studio: the player as a jointed, shaded mannequin driven by the pose's world landmarks,
+ * The 3D studio: the player as a dressed 3D athlete (see athlete.ts) driven by the pose's world landmarks,
  * standing on a dark wireframe court with glowing lines, ball and highlight rings.
  */
 
@@ -39,9 +41,9 @@ export interface SceneInput {
   ball?: boolean;
   /** Extra camera swing around the player, radians (for a slow orbit in reels). */
   orbit?: number;
+  /** Camera distance factor: 1 is the usual view, smaller moves in on the player. */
+  zoom?: number;
 }
-
-type Seg = { mesh: THREE.Mesh; a: number; b: number };
 
 const v3 = (p: Vec3) => new THREE.Vector3(p.x, p.y, p.z);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -52,16 +54,9 @@ export class StudioScene {
   private camera = new THREE.PerspectiveCamera(42, 9 / 16, 0.1, 200);
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
-  private body = new THREE.Group();
-  private segs: Seg[] = [];
-  private joints: { mesh: THREE.Mesh; i: number }[] = [];
-  private chest: THREE.Mesh;
-  private belly: THREE.Mesh;
-  private pelvis: THREE.Mesh;
-  private neck: THREE.Mesh;
-  private head: THREE.Mesh;
-  private hands: THREE.Mesh[];
-  private feet: THREE.Mesh[];
+  private athlete = new Athlete();
+  /** Frames with constant limb lengths, per input clip, so the figure doesn't stretch. */
+  private steady = new WeakMap<PoseFrame[], PoseFrame[]>();
   private racket = new THREE.Group();
   private ball: THREE.Mesh;
   private ballLight: THREE.PointLight;
@@ -91,44 +86,7 @@ export class StudioScene {
     this.buildCourt();
     this.buildLights();
 
-    // Mannequin: tapered limbs with ball joints, shaped torso and head.
-    const skin = new THREE.MeshStandardMaterial({ color: '#cfd4de', roughness: 0.42, metalness: 0.04 });
-    const jointMat = new THREE.MeshStandardMaterial({ color: '#9ea4b3', roughness: 0.5, metalness: 0.04 });
-    const limb = (a: number, b: number, rTop: number, rBottom: number) => {
-      const g = new THREE.CylinderGeometry(rBottom, rTop, 1, 20, 1);
-      g.translate(0, 0.5, 0);
-      const mesh = new THREE.Mesh(g, skin);
-      mesh.castShadow = true;
-      this.body.add(mesh);
-      this.segs.push({ mesh, a, b });
-    };
-    limb(11, 13, 0.047, 0.039); limb(12, 14, 0.047, 0.039);
-    limb(13, 15, 0.037, 0.03); limb(14, 16, 0.037, 0.03);
-    limb(23, 25, 0.078, 0.056); limb(24, 26, 0.078, 0.056);
-    limb(25, 27, 0.054, 0.037); limb(26, 28, 0.054, 0.037);
-    const joint = (i: number, r: number) => {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), jointMat);
-      mesh.castShadow = true;
-      this.body.add(mesh);
-      this.joints.push({ mesh, i });
-    };
-    joint(11, 0.058); joint(12, 0.058); joint(13, 0.043); joint(14, 0.043); joint(15, 0.033); joint(16, 0.033);
-    joint(23, 0.068); joint(24, 0.068); joint(25, 0.058); joint(26, 0.058); joint(27, 0.04); joint(28, 0.04);
-    const blob = (mat = skin) => {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20), mat);
-      m.castShadow = true;
-      this.body.add(m);
-      return m;
-    };
-    this.chest = blob();
-    this.belly = blob(jointMat);
-    this.pelvis = blob();
-    this.head = blob();
-    this.neck = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.048, 1, 16).translate(0, 0.5, 0), jointMat);
-    this.body.add(this.neck);
-    this.hands = [blob(), blob()];
-    this.feet = [blob(), blob()];
-    this.scene.add(this.body);
+    this.scene.add(this.athlete.group);
 
     // Racket: dark shaft, neon frame, faint strings.
     const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 1, 10).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: '#30343a', roughness: 0.5 }));
@@ -195,7 +153,7 @@ export class StudioScene {
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.bias = -0.0004;
-    key.shadow.normalBias = 0.02;
+    key.shadow.normalBias = 0.045;
     const sc = key.shadow.camera;
     sc.left = -4; sc.right = 4; sc.top = 4; sc.bottom = -4; sc.near = 1; sc.far = 40;
     key.target.position.set(1, 0, 12);
@@ -203,7 +161,7 @@ export class StudioScene {
     const rim = new THREE.DirectionalLight('#9d8cff', 1.8);
     rim.position.set(3, 4, 0);
     this.scene.add(rim);
-    const under = new THREE.PointLight('#9d8cff', 0.7, 2.5, 2);
+    const under = new THREE.PointLight('#9d8cff', 0.35, 2.5, 2);
     under.position.set(1, 0.3, 12.6);
     under.name = 'under';
     this.scene.add(under);
@@ -323,10 +281,21 @@ export class StudioScene {
     return out;
   }
 
-  render(input: SceneInput) {
+  private steadyFrames(frames: PoseFrame[]) {
+    let f = this.steady.get(frames);
+    if (!f) {
+      f = copyFrames(frames);
+      steadyBones(f);
+      this.steady.set(frames, f);
+    }
+    return f;
+  }
+
+  render(raw: SceneInput) {
+    const input = { ...raw, frames: this.steadyFrames(raw.frames) };
     const w = input.frames[input.i]?.world;
     const { space, flight } = this.spaceFor(input);
-    this.body.visible = !!w;
+    this.athlete.group.visible = !!w;
     this.racket.visible = !!w;
     this.current = w ? { w, space } : null;
     const P = (i: number) => v3(toCourt(w![i], space));
@@ -335,9 +304,12 @@ export class StudioScene {
     // Camera behind and above the player, looking past them to the net.
     const o = space.origin;
     const yaw = input.orbit ?? 0;
-    const back = 5.2, height = 2.6;
+    const z = input.zoom ?? 1;
+    const back = 5.2 * z, height = 0.9 + 1.7 * z;
     this.camera.position.set(o.x + Math.sin(yaw) * back + 0.5, height, o.z + Math.cos(yaw) * back);
-    this.camera.lookAt(o.x * 0.6, 0.15, o.z - 6.5);
+    // z = 1 looks past the player to the net; by z = 0.4 the aim is on the player's chest.
+    const t = Math.min(1, Math.max(0, (z - 0.4) / 0.6));
+    this.camera.lookAt(o.x * (0.6 * t + (1 - t)), 0.15 * t + 1.0 * (1 - t), o.z - 6.5 * t);
 
     this.racketPath(input, space);
     this.ballAndTrail(input, flight);
@@ -348,39 +320,12 @@ export class StudioScene {
   }
 
   private pose(w: Vec3[], P: (i: number) => THREE.Vector3, space: StrokeSpace, hand: Handedness) {
-    for (const s of this.segs) place(s.mesh, P(s.a), P(s.b));
-    for (const j of this.joints) j.mesh.position.copy(P(j.i));
-    const ls = P(11), rs = P(12), lh = P(23), rh = P(24);
-    const sm = ls.clone().add(rs).multiplyScalar(0.5);
-    const hm = lh.clone().add(rh).multiplyScalar(0.5);
-    const up = sm.clone().sub(hm);
-    const torso = up.length();
-    const shoulderW = ls.distanceTo(rs);
-    const hipW = lh.distanceTo(rh);
-    orient(this.chest, sm.clone().lerp(hm, 0.3), rs.clone().sub(ls), up, new THREE.Vector3(Math.max(0.13, shoulderW * 0.47), torso * 0.34, 0.115));
-    orient(this.belly, sm.clone().lerp(hm, 0.68), rh.clone().sub(lh).lerp(rs.clone().sub(ls), 0.5), up, new THREE.Vector3(Math.max(0.09, hipW * 0.5), torso * 0.22, 0.09));
-    orient(this.pelvis, hm.clone().addScaledVector(up, 0.08 / Math.max(torso, 0.1)), rh.clone().sub(lh), up, new THREE.Vector3(Math.max(0.11, hipW * 0.62), 0.105, 0.11));
-    const ears = P(7).add(P(8)).multiplyScalar(0.5);
-    const headC = ears.clone().addScaledVector(up.clone().normalize(), 0.03);
-    place(this.neck, sm.clone().addScaledVector(up.clone().normalize(), -0.02), headC.clone().lerp(sm, 0.35));
-    orient(this.head, headC, P(8).sub(P(7)), headC.clone().sub(sm), new THREE.Vector3(0.088, 0.118, 0.1));
-    // Hands from wrist toward the knuckles; feet from heel to toe.
-    [[15, 19, 17], [16, 20, 18]].forEach(([wr, ix, pk], k) => {
-      const a = P(wr);
-      const tip = P(ix).add(P(pk)).multiplyScalar(0.5);
-      const d = tip.clone().sub(a);
-      if (d.length() < 0.02) d.set(0, -0.06, 0);
-      d.setLength(0.085);
-      orient(this.hands[k], a.clone().addScaledVector(d, 0.6), P(ix).sub(P(pk)), d, new THREE.Vector3(0.045, 0.07, 0.025));
-    });
-    [[29, 31], [30, 32]].forEach(([heel, toe], k) => {
-      const a = P(heel), b = P(toe);
-      const d = b.clone().sub(a);
-      if (d.length() < 0.05) d.set(0, 0, -0.2);
-      // x = up × toe direction, so the ellipsoid's long z axis points along the foot.
-      const side = new THREE.Vector3().crossVectors(UP, d);
-      orient(this.feet[k], a.clone().lerp(b, 0.55).setY(Math.max(0.045, (a.y + b.y) / 2)), side, UP, new THREE.Vector3(0.05, 0.045, Math.max(0.12, d.length() * 0.62)));
-    });
+    // Keep the shoes on the court: lift the figure if tracking puts a foot below the floor.
+    const lowest = Math.min(...[29, 30, 31, 32].map((i) => P(i).y));
+    const lift = lowest < 0.0 ? -lowest : 0;
+    this.athlete.group.position.y = lift;
+    this.racket.position.y = lift;
+    this.athlete.update(P);
 
     // Racket.
     const r = estimateRacket(w, hand);
