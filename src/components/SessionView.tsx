@@ -44,7 +44,7 @@ export function SessionView({ id }: { id: string }) {
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [studio, setStudio] = useState(false);
-  const [studioView, setStudioView] = useState<'video' | 'coach'>('video');
+  const [studioView, setStudioView] = useState<'footage' | 'coach'>('footage');
   const [placement, setPlacement] = useState(false);
   const [corners, setCorners] = useState<Vec2[] | null>(null);
   const [selBounce, setSelBounce] = useState<string>();
@@ -134,7 +134,7 @@ export function SessionView({ id }: { id: string }) {
       studioScene.current ??= new StudioScene(W, H);
       const ph = inStroke && v.paused ? inStroke.phases.find((x) => x.frame === i) : undefined;
       const weight = inStroke ? weightTransfer(p.frames, inStroke, pl.hand) : null;
-      renderStudio({ ctx: view.ctx, W, H }, studioScene.current, { frames: p.frames, i, fps: s.fps, hand: pl.hand, stroke: inStroke, weight, view: camView }, {
+      renderStudio({ ctx: view.ctx, W, H }, studioScene.current, { frames: p.frames, i, fps: s.fps, hand: pl.hand, stroke: inStroke, weight, view: camView, video: { width: s.width, height: s.height } }, {
         callouts: ph ? inStroke!.callouts.filter((x) => x.phaseId === ph.id) : [],
         gauge: shareAt(weight, i),
         headline: ph ? phaseHeadline(inStroke!, ph) : undefined,
@@ -375,8 +375,8 @@ export function SessionView({ id }: { id: string }) {
         <label className="toggle" title="3D player on a virtual court, with racket path, ball flight and weight transfer"><input type="checkbox" checked={studio} onChange={(e) => { setStudio(e.target.checked); if (e.target.checked) { setPlacement(false); setCorners(null); } }} /> Studio look</label>
         {studio && (
           <div className="seg" title="Where the 3D camera stands">
-            <button className={studioView === 'video' ? 'on' : ''} onClick={() => setStudioView('video')}>Video angle</button>
-            <button className={studioView === 'coach' ? 'on' : ''} onClick={() => setStudioView('coach')}>Behind</button>
+            <button className={studioView === 'footage' ? 'on' : ''} onClick={() => setStudioView('footage')}>As filmed</button>
+            <button className={studioView === 'coach' ? 'on' : ''} onClick={() => setStudioView('coach')}>On court</button>
           </div>
         )}
         <label className="toggle"><input type="checkbox" checked={coach} onChange={(e) => setCoach(e.target.checked)} /> Coach editing</label>
