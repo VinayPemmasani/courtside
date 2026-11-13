@@ -15,3 +15,4 @@ export * from './court';
 export * from './setup';
 export * from './biomech';
 export * from './diagnose';
+export * from './procompare';

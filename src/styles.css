@@ -504,3 +504,20 @@ canvas.placing { cursor: crosshair; }
   .drill-topics .back { flex: none; margin: 0; }
   .drill-main { padding: 12px 16px 24px; }
 }
+/* Pro compare */
+.pro-tag { font-style: normal; font-size: 9px; letter-spacing: 0.12em; font-weight: 700; color: var(--accent-ink); background: var(--accent); padding: 1px 5px; margin-left: 6px; vertical-align: 2px; }
+.toggle.small { font-size: 11px; }
+.pro-cmp select { width: 100%; margin-top: 8px; }
+.pro-cmp .legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 10.5px; color: var(--muted); }
+.pro-cmp .legend span { display: inline-block; width: 18px; height: 0; border-top: 3px solid; }
+.pro-cmp .legend .you { border-color: rgba(226, 232, 246, 0.95); }
+.pro-cmp .legend .pro { border-color: var(--accent); border-top-style: dashed; }
+.pro-cmp table.live { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
+.pro-cmp table.live th { text-align: right; font-weight: 600; color: var(--muted); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding-bottom: 3px; }
+.pro-cmp table.live th:first-child, .pro-cmp table.live td:first-child { text-align: left; }
+.pro-cmp table.live td { text-align: right; padding: 2px 0; font-variant-numeric: tabular-nums; border-top: 1px solid var(--line); }
+.pro-cmp table.live tr.off td:last-child { color: var(--fix); font-weight: 700; }
+.pro-cmp .hint { color: var(--accent); }
+.pro-cmp h5 { margin: 10px 0 4px; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.pro-cmp ul.diffs { list-style: none; margin: 0; padding: 0; }
+.pro-cmp ul.diffs li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }

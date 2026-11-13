@@ -8,6 +8,8 @@ export interface Player {
   name: string;
   hand: Handedness;
   createdAt: number;
+  /** A reference player (e.g. a pro filmed in slow motion): their strokes become Pro compare models. */
+  pro?: boolean;
   /** Last change, for syncing between devices. */
   updatedAt?: number;
 }

@@ -436,3 +436,44 @@ export function wrap(ctx: CanvasRenderingContext2D, text: string, maxW: number):
   if (cur) lines.push(cur);
   return lines;
 }
+
+/**
+ * Pro compare: the reference skeleton drawn over the player as a gold ghost, with short links
+ * from the player's hitting elbow and hand to the pro's, so the gap reads at a glance.
+ */
+export function drawProSkeleton(v: View, pro: ImagePoint[], user: ImagePoint[] | null, hand: Handedness) {
+  const { ctx } = v;
+  const s = v.H / 720;
+  const { dom } = sides(hand);
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(245, 181, 68, 0.9)';
+  ctx.shadowColor = 'rgba(245, 181, 68, 0.6)';
+  ctx.shadowBlur = 10 * s;
+  ctx.lineWidth = 3.5 * s;
+  ctx.setLineDash([9 * s, 6 * s]);
+  for (const [a, b] of SKELETON) {
+    const p = toCanvas(v, pro[a]);
+    const q = toCanvas(v, pro[b]);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = COLORS.accent;
+  for (const i of [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]) {
+    const p = toCanvas(v, pro[i]);
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3.2 * s, 0, Math.PI * 2); ctx.fill();
+  }
+  if (user) {
+    ctx.strokeStyle = COLORS.fix;
+    ctx.lineWidth = 2 * s;
+    for (const i of [dom.elbow, dom.wrist]) {
+      if (user[i].v < 0.3) continue;
+      const p = toCanvas(v, user[i]);
+      const q = toCanvas(v, pro[i]);
+      if (Math.hypot(p.x - q.x, p.y - q.y) < 8 * s) continue;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}

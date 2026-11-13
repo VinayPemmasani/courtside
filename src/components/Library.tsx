@@ -13,6 +13,7 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [name, setName] = useState('');
   const [hand, setHand] = useState<Handedness>('right');
+  const [pro, setPro] = useState(false);
   const [kindFilter, setKindFilter] = useState<SessionKind | 'all'>('all');
   const [importing, setImporting] = useState(false);
 
@@ -52,7 +53,7 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
   const addPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    const p: Player = { id: newId('pl'), name: name.trim(), hand, createdAt: Date.now() };
+    const p: Player = { id: newId('pl'), name: name.trim(), hand, createdAt: Date.now(), ...(pro ? { pro: true } : {}) };
     await store.savePlayer(p);
     setName('');
     setSelected(p.id);
@@ -71,7 +72,7 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
               <button className={p.id === selected ? 'selected' : ''} onClick={() => setSelected(p.id)}>
                 <span className="avatar">{p.name.slice(0, 1).toUpperCase()}</span>
                 <span>
-                  {p.name}
+                  {p.name}{p.pro && <i className="pro-tag">PRO</i>}
                   <small>{p.hand === 'right' ? 'Right-handed' : 'Left-handed'}</small>
                 </span>
               </button>
@@ -84,6 +85,7 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
             <button type="button" className={hand === 'right' ? 'on' : ''} onClick={() => setHand('right')}>Right-handed</button>
             <button type="button" className={hand === 'left' ? 'on' : ''} onClick={() => setHand('left')}>Left-handed</button>
           </div>
+          <label className="toggle small" title="Their strokes become reference models in Pro compare"><input type="checkbox" checked={pro} onChange={(e) => setPro(e.target.checked)} /> Pro reference</label>
           <button className="primary" type="submit" disabled={!name.trim()}>Add player</button>
         </form>
         <label className="import-shared">
@@ -105,6 +107,9 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
               <div>
                 <h1>{player.name}</h1>
                 <p className="muted">{player.hand === 'right' ? 'Right-handed' : 'Left-handed'} · {sessions.length} session{sessions.length === 1 ? '' : 's'}</p>
+                <label className="toggle small" title="Use this player's strokes as models in Pro compare. Only import clips you have the right to use.">
+                  <input type="checkbox" checked={!!player.pro} onChange={async (e) => { await store.savePlayer({ ...player, pro: e.target.checked || undefined }); reload(); }} /> Pro reference: strokes become Pro compare models
+                </label>
               </div>
               <div className="actions">
                 <button onClick={() => go({ name: 'trends', playerId: player.id })} disabled={!sessions.length}>Progress</button>

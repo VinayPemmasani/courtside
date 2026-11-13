@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../App';
 import {
-  checkSetup, forwardSwingEnd, forwardSwingStart, formatMetric, METRIC_INFO, movePhase, strokeForBounce, type Lines, type Vec2, newId, prepare, retypeStroke, shareAt, strokeAt, topFix, weightTransfer,
+  checkSetup, proOverlay, rankPros, type ProRef, forwardSwingEnd, forwardSwingStart, formatMetric, METRIC_INFO, movePhase, strokeForBounce, type Lines, type Vec2, newId, prepare, retypeStroke, shareAt, strokeAt, topFix, weightTransfer,
   type AnchorJoint, type Callout, type KeyPoint, type Phase, type Stroke, type StrokeType,
 } from '../core';
 import { STROKE_LABEL, STROKE_TYPES, fmtStamp, fmtTime } from '../labels';
@@ -13,7 +13,9 @@ import { CourtPanel } from './CourtPanel';
 import { SetupBadge } from './FilmingGuide';
 import { ContactReading, FocusCard, PowerSequence } from './Insights';
 import { topicFor } from '../drills/catalog';
-import { drawCallouts, drawSkeleton, drawTrail, drawVideo, fullCrop, type LabelBox, type View } from '../render/overlay';
+import { ProComparePanel } from './ProCompare';
+import { loadProRefs } from '../storage/pros';
+import { drawCallouts, drawProSkeleton, drawSkeleton, drawTrail, drawVideo, fullCrop, type LabelBox, type View } from '../render/overlay';
 import { FrameGrabber } from '../render/grabber';
 import { canExportVideo, exportCarousel, exportPdf, exportVideo, renderCard, type CardContext } from '../render/export';
 import { exportStudioVideo, phaseHeadline } from '../render/reel';
@@ -48,6 +50,9 @@ export function SessionView({ id }: { id: string }) {
   const [studioView, setStudioView] = useState<'footage' | 'coach'>('footage');
   const [figure, setFigure] = useState<'mannequin' | 'athlete'>('mannequin');
   const [placement, setPlacement] = useState(false);
+  const [proMode, setProMode] = useState(false);
+  const [proRefs, setProRefs] = useState<ProRef[] | null>(null);
+  const [proKey, setProKey] = useState<string>();
   const [corners, setCorners] = useState<Vec2[] | null>(null);
   const [selBounce, setSelBounce] = useState<string>();
   const viewRef = useRef<View>();
@@ -90,6 +95,15 @@ export function SessionView({ id }: { id: string }) {
   const placed = useMemo(() => (session && prepared ? placeBounces(session, prepared.frames) : []), [session, prepared]);
   const setup = useMemo(() => (session ? checkSetup(session.frames, session.fps, session.width / (session.height || 1)) : null), [session?.frames]);
   const phaseHere = stroke?.phases.find((p) => p.frame === frame);
+  useEffect(() => {
+    if (proMode && !proRefs) loadProRefs().then(setProRefs);
+  }, [proMode, proRefs]);
+  const proMatches = useMemo(() => {
+    if (!proMode || !proRefs || !stroke || !prepared || !player) return [];
+    // A pro's own session never compares against itself.
+    return rankPros({ frames: prepared.frames, stroke, hand: player.hand }, proRefs.filter((r) => r.sessionId !== session?.id));
+  }, [proMode, proRefs, stroke, prepared, player, session?.id]);
+  const proMatch = proMatches.find((m) => m.ref.key === proKey) ?? proMatches[0];
   const nFrames = session?.frames.length ?? 0;
 
   const timeToFrame = useCallback((t: number) => {
@@ -110,13 +124,13 @@ export function SessionView({ id }: { id: string }) {
   }, [session, save]);
 
   // Drawing reads the latest state through a ref, so the playback loop never sees stale data.
-  const latest = useRef({ session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce });
-  latest.current = { session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce };
+  const latest = useRef({ session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch });
+  latest.current = { session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch };
 
   const draw = useCallback(() => {
     const v = videoRef.current;
     const c = canvasRef.current;
-    const { session: s, prepared: p, stroke: st, player: pl, selCallout: sel, studio: look, studioView: camView, figure: fig, placement: court, corners: pending, placed: bounces, selBounce: selB } = latest.current;
+    const { session: s, prepared: p, stroke: st, player: pl, selCallout: sel, studio: look, studioView: camView, figure: fig, placement: court, corners: pending, placed: bounces, selBounce: selB, proMode: proOn, proMatch: pm } = latest.current;
     if (!v || !c || !s || !p || !pl || !v.videoWidth) return;
     const dpr = window.devicePixelRatio || 1;
     const W = Math.round(c.clientWidth * dpr);
@@ -134,6 +148,18 @@ export function SessionView({ id }: { id: string }) {
       return;
     }
     const inStroke = st && i >= st.startFrame && i <= st.endFrame ? st : s.strokes.find((x) => i >= x.startFrame && i <= x.endFrame);
+    if (proOn) {
+      // Pro compare: the video, your skeleton, and the pro's skeleton timed to the same phase.
+      drawVideo(view, v);
+      drawSkeleton(view, p.frames[i]?.image ?? null, !!pm);
+      if (pm && st && i >= st.startFrame && i <= st.endFrame) {
+        const o = proOverlay({ frames: p.frames, stroke: st, hand: pl.hand }, pm.ref, i, s.width || v.videoWidth, s.height || v.videoHeight);
+        if (o) drawProSkeleton(view, o.image, p.frames[i]?.image ?? null, pl.hand);
+        drawSkeleton(view, p.frames[i]?.image ?? null);
+      }
+      boxes.current = [];
+      return;
+    }
     if (look) {
       // 3D studio preview; callouts on a paused phase frame show as rings and pinned labels.
       if (!studioScene.current) {
@@ -162,7 +188,7 @@ export function SessionView({ id }: { id: string }) {
     }
   }, []);
 
-  useEffect(() => { draw(); }, [draw, session, frame, coach, selCallout, prepared, studio, studioView, figure, placement, corners, placed, selBounce]);
+  useEffect(() => { draw(); }, [draw, session, frame, coach, selCallout, prepared, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch]);
   useEffect(() => { if (studio) loadStudioFonts().then(() => draw()); }, [studio, draw]);
   useEffect(() => () => studioScene.current?.dispose(), []);
 
@@ -380,8 +406,9 @@ export function SessionView({ id }: { id: string }) {
         </select>
         {setup && <SetupBadge report={setup} />}
         <div className="spacer" />
-        <label className="toggle" title="Tap the court corners once, then tap each bounce for line calls, depth and speed"><input type="checkbox" checked={placement} onChange={(e) => { setPlacement(e.target.checked); if (e.target.checked) setStudio(false); else setCorners(null); }} /> Shot placement</label>
-        <label className="toggle" title="3D mannequin under an arena spotlight, with racket path, eye line, ball flight and weight transfer"><input type="checkbox" checked={studio} onChange={(e) => { setStudio(e.target.checked); if (e.target.checked) { setPlacement(false); setCorners(null); } }} /> Studio look</label>
+        <label className="toggle" title="Tap the court corners once, then tap each bounce for line calls, depth and speed"><input type="checkbox" checked={placement} onChange={(e) => { setPlacement(e.target.checked); if (e.target.checked) { setStudio(false); setProMode(false); } else setCorners(null); }} /> Shot placement</label>
+        <label className="toggle" title="3D mannequin under an arena spotlight, with racket path, eye line, ball flight and weight transfer"><input type="checkbox" checked={studio} onChange={(e) => { setStudio(e.target.checked); if (e.target.checked) { setPlacement(false); setCorners(null); setProMode(false); } }} /> Studio look</label>
+        <label className="toggle" title="Overlay the closest pro stroke from your Pro reference players and show the differences"><input type="checkbox" checked={proMode} onChange={(e) => { setProMode(e.target.checked); if (e.target.checked) { setStudio(false); setPlacement(false); setCorners(null); setProRefs(null); } }} /> Pro compare</label>
         {studio && (
           <div className="seg" title="Where the 3D camera stands">
             <button className={studioView === 'footage' ? 'on' : ''} onClick={() => setStudioView('footage')}>As filmed</button>
@@ -443,7 +470,7 @@ export function SessionView({ id }: { id: string }) {
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
             />
-            {phaseHere && stroke && !studio && (
+            {phaseHere && stroke && !studio && !proMode && (
               <div className="phase-badge"><span>{phaseHere.index}</span>{phaseHere.label}</div>
             )}
             {url && (
@@ -549,6 +576,15 @@ export function SessionView({ id }: { id: string }) {
                 </div>
               </div>
 
+              {proMode && (() => {
+                const inside = frame >= stroke.startFrame && frame <= stroke.endFrame;
+                const o = proMatch && inside ? proOverlay({ frames: prepared.frames, stroke, hand: player.hand }, proMatch.ref, frame, session.width, session.height) : null;
+                const uw = inside ? prepared.frames[frame]?.world ?? null : null;
+                return (
+                  <ProComparePanel stroke={stroke} fps={session.fps} hand={player.hand} matches={proMatches} selected={proMatches.find((m) => m.ref.key === proKey)}
+                    onSelect={setProKey} userWorld={uw && o ? uw : null} proWorld={o?.world ?? null} loading={!proRefs} />
+                );
+              })()}
               <FocusCard stroke={stroke} />
               <ContactReading stroke={stroke} rules={rules} hand={player.hand} />
               <PowerSequence prepared={prepared} stroke={stroke} frame={frame} onSeek={seekFrame} />
