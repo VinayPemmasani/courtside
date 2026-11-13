@@ -15,7 +15,8 @@ import {
 import { alongPath, alongSegment, bodyDiscs, type Disc } from './layout';
 import { copyFrames, steadyBones } from '../core/tracking';
 import { Athlete } from './athlete';
-import { Mannequin } from './mannequin';
+import { Mannequin, mannequinMaterials } from './mannequin';
+import { RiggedMannequin } from './rigged';
 
 /**
  * The 3D studio ("arena" look): the player as a glossy jointed mannequin (mannequin.ts; the dressed
@@ -88,7 +89,8 @@ export class StudioScene {
   private bloom: UnrealBloomPass;
   private athlete = new Athlete();
   private mannequin = new Mannequin();
-  private figure: Athlete | Mannequin = this.mannequin;
+  private rigged = new RiggedMannequin(mannequinMaterials());
+  private figure: Athlete | Mannequin | RiggedMannequin = this.mannequin;
   private gtao: GTAOPass;
   private bokeh: BokehPass;
   private spot!: THREE.SpotLight;
@@ -137,7 +139,7 @@ export class StudioScene {
     this.buildCourt();
     this.buildLights();
 
-    this.scene.add(this.athlete.group, this.mannequin.group);
+    this.scene.add(this.athlete.group, this.mannequin.group, this.rigged.group);
 
     // Racket: graphite frame and shaft, pale strings.
     const graphite = new THREE.MeshPhysicalMaterial({ color: '#15171c', roughness: 0.32, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.15 });
@@ -189,6 +191,11 @@ export class StudioScene {
       try { render(...args); } finally { hidden.forEach((o) => (o.visible = true)); }
     };
     return pass;
+  }
+
+  /** Resolves when the rigged mannequin has loaded (or failed to), so first frames use the real model. */
+  get ready(): Promise<boolean> {
+    return this.rigged.ready;
   }
 
   get canvas() {
@@ -437,8 +444,8 @@ export class StudioScene {
     const footage = (raw.view ?? (raw.video ? 'footage' : 'coach')) === 'footage' && raw.video;
     this.courtGroup.visible = !footage;
     this.glow.visible = false;
-    this.figure = raw.figure === 'athlete' ? this.athlete : this.mannequin;
-    this.athlete.group.visible = this.mannequin.group.visible = false;
+    this.figure = raw.figure === 'athlete' ? this.athlete : this.rigged.loaded ? this.rigged : this.mannequin;
+    this.athlete.group.visible = this.mannequin.group.visible = this.rigged.group.visible = false;
     if (footage) return this.renderFootage(raw);
     this.renderPass.camera = this.camera;
     this.scene.fog = this.fog;
@@ -571,11 +578,17 @@ export class StudioScene {
 
   private pose(w: Vec3[], P: (i: number) => THREE.Vector3, space: StrokeSpace, hand: Handedness, onCourt = true) {
     // Keep the shoes on the court: lift the figure if tracking puts a foot below the floor.
-    const lowest = Math.min(...[29, 30, 31, 32].map((i) => P(i).y));
+    const side = hand === 'left' ? 'l' : 'r';
+    this.figure.group.position.y = 0;
+    this.figure.update(P, side);
+    const rig = this.figure === this.rigged ? this.rigged : null;
+    const lowest = rig ? rig.lowest() : Math.min(...[29, 30, 31, 32].map((i) => P(i).y));
     const lift = onCourt && lowest < 0.0 ? -lowest : 0;
     this.figure.group.position.y = lift;
-    this.racket.position.y = lift;
-    this.figure.update(P);
+    this.racket.position.set(0, lift, 0);
+    // The rigged model keeps its own arm lengths: move the racket so its grip stays in the model's hand.
+    const modelHand = rig?.hand(side);
+    if (modelHand) this.racket.position.copy(modelHand.sub(P(hand === 'left' ? 15 : 16)));
 
     // Racket.
     const r = estimateRacket(w, hand);
@@ -585,7 +598,7 @@ export class StudioScene {
     const grip = v3(toCourt(r.grip, space));
     const head = v3(toCourt(r.head, space));
     const tip = v3(toCourt(r.tip, space));
-    this.shown.racket = [grip, head, tip];
+    this.shown.racket = [grip, head, tip].map((p) => p.clone().add(this.racket.position));
     const dir = tip.clone().sub(grip).normalize();
     const shaft = this.racket.getObjectByName('shaft') as THREE.Mesh;
     place(shaft, grip, grip.clone().lerp(tip, 0.5));
@@ -644,7 +657,7 @@ export class StudioScene {
     if (this.eyeLine) { this.scene.remove(this.eyeLine); disposeTree(this.eyeLine); this.eyeLine = null; }
     const w = input.frames[input.i]?.world;
     if (!w || input.eyeLine === false || !this.ball.visible) return;
-    const eyes = P(2).add(P(5)).multiplyScalar(0.5).add(new THREE.Vector3(0, this.figure.group.position.y, 0));
+    const eyes = (this.figure === this.rigged ? this.rigged.eyes() : null) ?? P(2).add(P(5)).multiplyScalar(0.5).add(new THREE.Vector3(0, this.figure.group.position.y, 0));
     const to = this.ball.position.clone();
     const d = to.clone().sub(eyes);
     const len = d.length();

@@ -1,0 +1,6 @@
+mannequin.glb
+  "Mannequiny" (Open 3D Mannequin) by Luciano Muñoz for GDQuest.
+  Source: https://github.com/gdquest-demos/godot-3d-mannequin (godot/assets/3d/mannequiny/mannequiny-0.3.0.glb)
+  Licence: CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+  Attribution: GDQuest and contributors (https://www.gdquest.com/)
+  Changes: materials replaced; animations unused; posed live from pose-tracking landmarks.

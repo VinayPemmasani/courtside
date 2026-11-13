@@ -135,7 +135,11 @@ export function SessionView({ id }: { id: string }) {
     const inStroke = st && i >= st.startFrame && i <= st.endFrame ? st : s.strokes.find((x) => i >= x.startFrame && i <= x.endFrame);
     if (look) {
       // 3D studio preview; callouts on a paused phase frame show as rings and pinned labels.
-      studioScene.current ??= new StudioScene(W, H);
+      if (!studioScene.current) {
+        studioScene.current = new StudioScene(W, H);
+        // First frames use the built-in figure; redraw with the real model once it has loaded.
+        studioScene.current.ready.then(() => draw());
+      }
       const ph = inStroke && v.paused ? inStroke.phases.find((x) => x.frame === i) : undefined;
       const weight = inStroke ? weightTransfer(p.frames, inStroke, pl.hand) : null;
       renderStudio({ ctx: view.ctx, W, H }, studioScene.current, { frames: p.frames, i, fps: s.fps, hand: pl.hand, stroke: inStroke, weight, view: camView, figure: fig, video: { width: s.width, height: s.height } }, {
@@ -385,7 +389,7 @@ export function SessionView({ id }: { id: string }) {
         )}
         {studio && (
           <div className="seg" title="How the 3D player looks">
-            <button className={figure === 'mannequin' ? 'on' : ''} onClick={() => setFigure('mannequin')}>Mannequin</button>
+            <button className={figure === 'mannequin' ? 'on' : ''} onClick={() => setFigure('mannequin')} title="3D mannequin: 'Mannequiny' by Luciano Muñoz / GDQuest and contributors, CC-BY 4.0">Mannequin</button>
             <button className={figure === 'athlete' ? 'on' : ''} onClick={() => setFigure('athlete')}>Player</button>
           </div>
         )}

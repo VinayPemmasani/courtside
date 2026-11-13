@@ -61,6 +61,7 @@ export async function exportStudioVideo(ctx: CardContext, stroke: Stroke, onProg
   canvas.height = H;
   const view: Surface = { ctx: canvas.getContext('2d')!, W, H };
   const scene = new StudioScene(W, H);
+  await scene.ready;
   const writer = await createFrameWriter(canvas);
   const phases = stroke.phases;
   const slow = 1000 / (session.fps * 0.25);
@@ -130,6 +131,7 @@ export async function exportStudioCompare(a: CompareSide, b: CompareSide, onProg
   canvas.height = H;
   const out = canvas.getContext('2d')!;
   const scene = new StudioScene(panelW, panelH);
+  await scene.ready;
   const weights = [weightTransfer(a.frames, a.stroke, a.player.hand), weightTransfer(b.frames, b.stroke, b.player.hand)];
   const writer = await createFrameWriter(canvas);
   const phases = a.stroke.phases;

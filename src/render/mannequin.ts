@@ -14,7 +14,7 @@ import { basis, ellipsoid, flipZ, Loft, type Pt } from './athlete';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
-function materials() {
+export function mannequinMaterials() {
   const shell = new THREE.MeshPhysicalMaterial({
     color: '#eceef2',
     roughness: 0.36,
@@ -29,7 +29,8 @@ function materials() {
   const joint = shell.clone();
   joint.color.set('#c7cbd4');
   joint.roughness = 0.42;
-  return { shell, joint };
+  const dark = new THREE.MeshPhysicalMaterial({ color: '#23262d', roughness: 0.35, clearcoat: 0.8, clearcoatRoughness: 0.2 });
+  return { shell, joint, dark };
 }
 
 /**
@@ -68,7 +69,7 @@ type Seg = { mesh: THREE.Mesh; a: number; b: number; gapA: number; gapB: number 
 
 export class Mannequin {
   readonly group = new THREE.Group();
-  private m = materials();
+  private m = mannequinMaterials();
   private segs: Seg[] = [];
   private balls: { mesh: THREE.Mesh; i: number }[] = [];
   private chest: Loft;
@@ -160,7 +161,7 @@ export class Mannequin {
     for (let k = 0; k < 2; k++) this.feet.push({ foot: add(sphere, shell), toes: add(sphere, shell) });
   }
 
-  update(P: Pt) {
+  update(P: Pt, _dominant?: 'l' | 'r') {
     for (const s of this.segs) span(s.mesh, P(s.a), P(s.b), s.gapA, s.gapB);
     for (const b of this.balls) b.mesh.position.copy(P(b.i));
 

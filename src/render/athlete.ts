@@ -235,7 +235,7 @@ export class Athlete {
     }
   }
 
-  update(P: Pt) {
+  update(P: Pt, _dominant?: 'l' | 'r') {
     for (const l of this.limbs) {
       const a = P(l.a), b = P(l.b);
       for (const part of l.parts) place(part, a, b);
