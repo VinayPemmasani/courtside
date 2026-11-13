@@ -4,6 +4,7 @@ import { newId, topFix, type Handedness } from '../core';
 import { STROKE_LABEL, fmtDate } from '../labels';
 import { SESSION_KINDS, store, type Player, type SessionKind, type SessionSummary } from '../storage/db';
 import { importBundle } from '../storage/share';
+import { CHANGED } from '../storage/cloud';
 
 export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
   const { go } = useApp();
@@ -31,14 +32,22 @@ export function Library({ initialPlayerId }: { initialPlayerId?: string }) {
   const reload = async () => {
     const ps = await store.players();
     setPlayers(ps);
-    setSelected((cur) => cur ?? ps[0]?.id);
+    setSelected((cur) => (cur && ps.some((p) => p.id === cur) ? cur : ps[0]?.id));
   };
-  useEffect(() => { reload(); }, []);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    reload();
+    const again = () => { reload(); setTick((t) => t + 1); };
+    window.addEventListener(CHANGED, again);
+    return () => window.removeEventListener(CHANGED, again);
+  }, []);
   useEffect(() => {
     setKindFilter('all');
+  }, [selected]);
+  useEffect(() => {
     if (selected) store.sessions(selected).then(setSessions);
     else setSessions([]);
-  }, [selected]);
+  }, [selected, tick]);
 
   const addPlayer = async (e: React.FormEvent) => {
     e.preventDefault();

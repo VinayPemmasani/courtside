@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { Rule } from './core';
-import { store } from './storage/db';
+import { startCloud, store } from './storage/db';
+import { CHANGED, cloudStatus, onCloudStatus, type CloudStatus } from './storage/cloud';
 import { Library } from './components/Library';
 import { ImportView } from './components/ImportView';
 import { SessionView } from './components/SessionView';
@@ -34,8 +35,15 @@ export function App() {
   const [route, setRoute] = useState<Route>({ name: 'library' });
   const [rules, setRulesState] = useState<Rule[] | null>(null);
 
+  const [cloud, setCloud] = useState<CloudStatus>(cloudStatus());
+
   useEffect(() => {
     store.rules().then(setRulesState);
+    const off = onCloudStatus(setCloud);
+    startCloud();
+    const reloadRules = () => store.rules().then(setRulesState);
+    window.addEventListener(CHANGED, reloadRules);
+    return () => { off(); window.removeEventListener(CHANGED, reloadRules); };
   }, []);
 
   const setRules = useCallback(async (r: Rule[]) => {
@@ -59,7 +67,7 @@ export function App() {
           <div className="telemetry" aria-hidden="true">
             <span className="opt">Pose <b>33 pts</b></span>
             <span className="opt">Phases <b>6</b></span>
-            <span>Mode <b>Local</b></span>
+            <CloudBadge s={cloud} />
             <span>View <b>{VIEW_LABEL[route.name]}</b></span>
             <span className="live">Ready</span>
           </div>
@@ -74,5 +82,24 @@ export function App() {
         </main>
       </div>
     </Ctx.Provider>
+  );
+}
+
+const CLOUD_LABEL: Record<CloudStatus['state'], string> = {
+  off: 'This device', connecting: 'Connecting', syncing: 'Syncing', synced: 'Saved', error: 'Not synced',
+};
+const CLOUD_HINT: Record<CloudStatus['state'], string> = {
+  off: 'Saved on this device only. Open the app from its claude.ai link to save to the cloud.',
+  connecting: 'Connecting to your cloud storage…',
+  syncing: 'Saving to your cloud storage…',
+  synced: 'Players and sessions are saved to your cloud and show on every device that opens this link.',
+  error: 'Some changes have not reached the cloud yet.',
+};
+
+function CloudBadge({ s }: { s: CloudStatus }) {
+  return (
+    <span className={`cloud cloud-${s.state}`} title={s.note ?? CLOUD_HINT[s.state]}>
+      Cloud <b>{CLOUD_LABEL[s.state]}</b>
+    </span>
   );
 }

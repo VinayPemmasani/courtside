@@ -304,7 +304,8 @@ td.good { color: var(--good); } td.fix { color: var(--fix); }
   .players { border-right: none; border-bottom: 1px solid var(--line); }
   .sessions, .import, .compare, .trends, .rules { padding: 16px; }
   .rule-texts { grid-template-columns: 1fr; }
-  .telemetry { display: none; }
+  .telemetry > span:not(.cloud) { display: none; }
+  .telemetry .cloud::before { display: none; }
 }
 .split-export input { width: 200px; }
 
@@ -429,3 +430,9 @@ canvas.placing { cursor: crosshair; }
 .focus { border-color: var(--accent); }
 .focus .focus-title { font-size: 13.5px; color: #fff; font-weight: 600; }
 .focus .q { color: var(--accent); font-style: italic; }
+
+/* Cloud save status in the top bar */
+.telemetry .cloud b { color: var(--muted); }
+.telemetry .cloud-synced b { color: var(--teal); }
+.telemetry .cloud-syncing b, .telemetry .cloud-connecting b { color: var(--text); }
+.telemetry .cloud-error b { color: #ff8a5c; }
