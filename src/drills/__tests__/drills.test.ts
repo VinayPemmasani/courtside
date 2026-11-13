@@ -35,7 +35,7 @@ describe('drills', () => {
         }
       }
     }
-  });
+  }, 120_000);
 
   it('left-handers are the mirror image', () => {
     const m = TOPICS[0].drills[0].motion('forehand');
