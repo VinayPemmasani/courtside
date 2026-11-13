@@ -102,7 +102,7 @@ function DrillDetail({ topic, drill, stroke, hand }: { topic: Topic; index: numb
   // The live 3D player.
   useEffect(() => {
     const el = wrap.current!;
-    const w = Math.round(Math.min(720, el.clientWidth || 480) * Math.min(1.5, window.devicePixelRatio || 1));
+    const w = Math.round(Math.min(720, el.clientWidth || 480) * Math.min(1.25, window.devicePixelRatio || 1));
     const h = Math.round(w * 1.2);
     const scene = new StudioScene(w, h);
     sceneRef.current = scene;
@@ -119,7 +119,7 @@ function DrillDetail({ topic, drill, stroke, hand }: { topic: Topic; index: numb
       last = now;
       if (s.playing) s.t = (s.t + dt * s.speed) % player.duration;
       if (s.orbit) s.cam += dt * 18;
-      player.render(s.t, { yaw: s.cam });
+      player.render(s.t, { yaw: s.cam }, { fast: true });
       if (now - lastUi > 120) { setT(s.t); lastUi = now; }
       raf = requestAnimationFrame(loop);
     };

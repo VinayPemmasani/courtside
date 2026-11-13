@@ -257,13 +257,16 @@ export class RiggedMannequin {
         this.setWorld(n, new THREE.Quaternion().setFromAxisAngle(axis, angles[k - 1]).multiply(cur));
       }
     }
-    // Thumb wraps part way.
+    // Thumb folds across toward the fingers (not a thumbs-up).
     for (let k = 1; k <= 3; k++) {
       const n = `thumb_0${k}${side}`;
       const bind = this.bones.get(n);
       if (!bind) continue;
       const pq = bind.bone.parent!.getWorldQuaternion(new THREE.Quaternion());
-      this.setWorld(n, new THREE.Quaternion().setFromAxisAngle(axis, 0.35 * amount).multiply(pq.clone().multiply(bind.local)));
+      // Flex toward the palm (about the hand's long axis at the base), then curl the joints.
+      const T = [1.0, 0.8];
+      const opp = new THREE.Quaternion().setFromAxisAngle(main, (side === 'l' ? 1 : -1) * (k === 1 ? T[0] : 0) * amount);
+      this.setWorld(n, new THREE.Quaternion().setFromAxisAngle(axis, T[1] * amount).multiply(opp).multiply(pq.clone().multiply(bind.local)));
     }
   }
 }

@@ -380,7 +380,13 @@ export class Animation {
     vec('lPalm', (k) => k.lPalm); vec('rPalm', (k) => k.rPalm);
     put('lookOn', (k) => (k.look ? 1 : 0));
     put('lookY', (k) => k.look?.[0]); put('lookP', (k) => k.look?.[1]);
-    if (motion.ball) this.ballCurve = this.path(motion.ball);
+    // Bake the whole rep once, smoothed, so playback is steady (pass 1: no gaze; pass 2 looks at the ball).
+    this.cache = this.bake(null);
+    if (motion.ball) {
+      this.ballCurve = this.path(motion.ball);
+      const ballAt = this.ballCurve;
+      this.cache = this.bake((t) => ballAt(t));
+    }
     const med = motion.props?.find((p) => p.kind === 'medball');
     if (med) {
       const fl = med.flight ? this.path(med.flight) : null;
@@ -413,9 +419,37 @@ export class Animation {
     };
   }
 
+  /** Baked, smoothed frames at BAKE_FPS (right-handed, before placing on court). */
+  private cache: BodyFrame[] | null = null;
+
+  private bake(gaze: ((t: number) => V3 | null) | null): BodyFrame[] {
+    const n = Math.max(2, Math.ceil(this.duration * BAKE_FPS) + 1);
+    const frames: BodyFrame[] = [];
+    for (let i = 0; i < n; i++) {
+      const t = Math.min(this.duration, i / BAKE_FPS);
+      frames.push(build(this.poseAt(t), gaze ? gaze(t) : null));
+    }
+    return smoothFrames(frames, BAKE_FPS);
+  }
+
+  /** The baked frame at time t, blended between the two nearest samples. */
+  private sample(t: number): BodyFrame {
+    const c = this.cache!;
+    const x = Math.max(0, Math.min(c.length - 1, t * BAKE_FPS));
+    const i = Math.min(c.length - 2, Math.floor(x));
+    const k = x - i;
+    const a = c[i], b = c[i + 1];
+    const lerp = (p: Vec3, q: Vec3): Vec3 => ({ x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k, z: p.z + (q.z - p.z) * k });
+    const nrm = (v: Vec3): Vec3 => { const l = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x / l, y: v.y / l, z: v.z / l }; };
+    return {
+      pts: a.pts.map((p, j) => lerp(p, b.pts[j])),
+      racket: a.racket && b.racket ? { dir: nrm(lerp(a.racket.dir, b.racket.dir)), face: nrm(lerp(a.racket.face, b.racket.face)) } : (k < 0.5 ? a.racket : b.racket),
+    };
+  }
+
   /** Right-handed frame plus racket head, for resolving ball keys. */
   private raw(t: number, gaze: V3 | null = null) {
-    const f = build(this.poseAt(t), gaze);
+    const f = this.cache ? this.sample(t) : build(this.poseAt(t), gaze);
     const w = f.pts;
     const g = (i: number): V3 => [w[i].x, w[i].y, w[i].z];
     const head = f.racket ? add(g(16), mul([f.racket.dir.x, f.racket.dir.y, f.racket.dir.z], 0.68 * 0.72)) : null;
@@ -454,7 +488,7 @@ export class Animation {
   at(t: number): DrillFrame {
     const tt = ((t % this.duration) + this.duration) % this.duration;
     const ball = this.ballCurve?.(tt) ?? null;
-    const { f, g } = this.raw(tt, ball);
+    const { f, g } = this.raw(tt);
     const handsMid = mul(add(g(15), g(16)), 0.5);
     let med = this.medCurve?.(tt, handsMid) ?? null;
     if (med && this.medCurve && med === handsMid) {
@@ -465,6 +499,85 @@ export class Animation {
     const out: DrillFrame = { ...f, ball: ball ? V(ball) : null, medball: med ? V(med) : null, hands: { l: f.pts[15], r: f.pts[16] } };
     return place(this.hand === 'left' ? mirror(out) : out);
   }
+}
+
+const BAKE_FPS = 60;
+
+/** Seconds of smoothing per landmark: hands quick, trunk and head steadier. */
+function sigmaOf(j: number) {
+  if (j >= 15 && j <= 22) return 0.03;
+  if (j === 13 || j === 14) return 0.035;
+  if (j >= 27) return 0.025;
+  if (j <= 10) return 0.06;
+  return 0.045;
+}
+
+/** Zero-phase Gaussian over a series (wrapping when the rep loops back to its start). */
+function gaussSeries(xs: number[], sigma: number, wrap: boolean): number[] {
+  if (sigma < 0.5) return xs.slice();
+  const r = Math.ceil(sigma * 3);
+  const w: number[] = [];
+  for (let d = -r; d <= r; d++) w.push(Math.exp(-(d * d) / (2 * sigma * sigma)));
+  const n = xs.length;
+  return xs.map((_, i) => {
+    let s = 0, m = 0;
+    for (let d = -r; d <= r; d++) {
+      let j = i + d;
+      if (wrap) j = ((j % (n - 1)) + (n - 1)) % (n - 1);
+      else if (j < 0 || j >= n) continue;
+      s += xs[j] * w[d + r];
+      m += w[d + r];
+    }
+    return s / m;
+  });
+}
+
+/**
+ * Smooth a baked rep: every landmark and the racket filtered both ways in time (no lag, no
+ * corners where key poses meet), then elbows and knees re-solved so limbs keep their length
+ * and bend the same way they did.
+ */
+function smoothFrames(frames: BodyFrame[], fps: number): BodyFrame[] {
+  const n = frames.length;
+  const first = frames[0].pts, last = frames[n - 1].pts;
+  const wrap = first.every((p, j) => Math.hypot(p.x - last[j].x, p.y - last[j].y, p.z - last[j].z) < 0.03);
+  const out: BodyFrame[] = frames.map((f) => ({ pts: f.pts.map((p) => ({ ...p })), racket: f.racket ? { dir: { ...f.racket.dir }, face: { ...f.racket.face } } : null }));
+  for (let j = 0; j < 33; j++) {
+    for (const ax of ['x', 'y', 'z'] as const) {
+      const sm = gaussSeries(frames.map((f) => f.pts[j][ax]), sigmaOf(j) * fps, wrap);
+      out.forEach((f, i) => (f.pts[j][ax] = sm[i]));
+    }
+  }
+  // Racket: smooth where it is held (runs of frames with a racket).
+  if (frames.every((f) => f.racket)) {
+    for (const key of ['dir', 'face'] as const) for (const ax of ['x', 'y', 'z'] as const) {
+      const sm = gaussSeries(frames.map((f) => f.racket![key][ax]), 0.03 * fps, wrap);
+      out.forEach((f, i) => (f.racket![key][ax] = sm[i]));
+    }
+    for (const f of out) {
+      const d = unit([f.racket!.dir.x, f.racket!.dir.y, f.racket!.dir.z]);
+      let fc: V3 = [f.racket!.face.x, f.racket!.face.y, f.racket!.face.z];
+      fc = unit(sub(fc, mul(d, dot(fc, d))));
+      f.racket = { dir: V(d), face: V(fc) };
+    }
+  }
+  // Limb lengths back to exact, bends kept.
+  const g = (f: BodyFrame, j: number): V3 => [f.pts[j].x, f.pts[j].y, f.pts[j].z];
+  for (const f of out) {
+    for (const [a, m, c, l1, l2] of [[12, 14, 16, B.upper, B.fore], [11, 13, 15, B.upper, B.fore], [24, 26, 28, B.thigh, B.shin], [23, 25, 27, B.thigh, B.shin]] as const) {
+      const A = g(f, a), M = g(f, m), C = g(f, c);
+      const pole = sub(M, mul(add(A, C), 0.5));
+      const res = ik(A, C, l1, l2, pole);
+      f.pts[m] = V(res.mid);
+      const shift = sub(res.end, C);
+      if (len(shift) > 1e-6) {
+        // Keep the hand or foot attached to its end.
+        const kids = c === 16 ? [16, 18, 20, 22] : c === 15 ? [15, 17, 19, 21] : c === 28 ? [28, 30, 32] : [27, 29, 31];
+        for (const k of kids) f.pts[k] = V(add(g(f, k), shift));
+      }
+    }
+  }
+  return out;
 }
 
 /** Landmark pairs swapped when mirroring to a left-hander. */

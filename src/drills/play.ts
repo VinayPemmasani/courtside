@@ -34,13 +34,13 @@ export class DrillPlayer {
       if (tt < 0) continue;
       const f = this.anim.at(tt);
       const w = f.pts[this.hand === 'left' ? 15 : 16];
-      if (f.racket) out.push({ x: w.x + f.racket.dir.x * 0.53, y: w.y + f.racket.dir.y * 0.53, z: w.z + f.racket.dir.z * 0.53 });
+      if (f.racket) out.push({ x: w.x + f.racket.dir.x * 0.49, y: w.y + f.racket.dir.y * 0.49, z: w.z + f.racket.dir.z * 0.49 });
       else out.push(w);
     }
     return out;
   }
 
-  render(t: number, cam: { yaw: number; dist?: number; height?: number; aimY?: number }, opts: { trail?: boolean } = {}) {
+  render(t: number, cam: { yaw: number; dist?: number; height?: number; aimY?: number }, opts: { trail?: boolean; fast?: boolean } = {}) {
     const tt = Math.max(0, Math.min(this.duration - 1e-3, t));
     const f = this.anim.at(tt);
     const band = this.motion.props?.find((p) => p.kind === 'band');
@@ -49,6 +49,7 @@ export class DrillPlayer {
       pts: f.pts, hand: this.hand, racket: f.racket, ball: f.ball, medball: f.medball,
       band: band?.p ? { from: propAt(band.p, this.hand), hands: bandHands } : null,
       trail: opts.trail === false || !f.racket ? undefined : this.trail(tt, 0.45),
+      fast: opts.fast,
       camera: { target: { ...this.target, y: cam.aimY ?? this.target.y }, ...cam },
     });
   }

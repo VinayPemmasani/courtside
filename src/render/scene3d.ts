@@ -19,6 +19,7 @@ import type { RacketPose } from '../core/racket';
 import { Athlete } from './athlete';
 import { Mannequin, mannequinMaterials } from './mannequin';
 import { RiggedMannequin } from './rigged';
+import { buildRacket, placeRacket } from './racket3d';
 
 /**
  * The 3D studio ("arena" look): the player as a glossy jointed mannequin (mannequin.ts; the dressed
@@ -143,16 +144,8 @@ export class StudioScene {
 
     this.scene.add(this.athlete.group, this.mannequin.group, this.rigged.group);
 
-    // Racket: graphite frame and shaft, pale strings.
-    const graphite = new THREE.MeshPhysicalMaterial({ color: '#15171c', roughness: 0.32, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.15 });
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.017, 1, 12).translate(0, 0.5, 0), graphite);
-    shaft.name = 'shaft';
-    const frame = new THREE.Mesh(new THREE.TorusGeometry(1, 0.075, 12, 64), graphite);
-    frame.name = 'frame';
-    const strings = new THREE.Mesh(new THREE.CircleGeometry(1, 48), new THREE.MeshStandardMaterial({ map: stringBed(), transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, roughness: 0.6 }));
-    strings.name = 'strings';
-    for (const m of [shaft, frame, strings]) m.castShadow = true;
-    this.racket.add(shaft, frame, strings);
+    // Racket: a full model to real proportions (racket3d.ts).
+    this.racket.add(buildRacket());
     this.scene.add(this.racket);
 
     // Felt-yellow ball with a faint glow so it reads against the dark.
@@ -636,17 +629,8 @@ export class StudioScene {
     const tip = v3(toCourt(r.tip, space));
     this.shown.racket = [grip, head, tip].map((p) => p.clone().add(this.racket.position));
     const dir = tip.clone().sub(grip).normalize();
-    const shaft = this.racket.getObjectByName('shaft') as THREE.Mesh;
-    place(shaft, grip, grip.clone().lerp(tip, 0.5));
     const face = r.face ? v3(dirToCourt(r.face, space)).normalize() : new THREE.Vector3().crossVectors(dir, UP).normalize();
-    const across = new THREE.Vector3().crossVectors(face, dir).normalize();
-    const basis = new THREE.Matrix4().makeBasis(across, dir, face);
-    for (const name of ['frame', 'strings']) {
-      const m = this.racket.getObjectByName(name) as THREE.Mesh;
-      m.position.copy(head);
-      m.quaternion.setFromRotationMatrix(basis);
-      m.scale.set(0.125, 0.165, name === 'frame' ? 0.15 : 1);
-    }
+    placeRacket(this.racket.getObjectByName('racket-model')!, grip.clone().addScaledVector(dir, 0.02), dir, face);
   }
 
   /**
@@ -826,6 +810,8 @@ export class StudioScene {
   renderDrill(d: {
     pts: Vec3[]; hand: Handedness; racket: { dir: Vec3; face: Vec3 } | null; ball: Vec3 | null; medball: Vec3 | null;
     band?: { from: Vec3; hands: 'l' | 'r' | 'both' } | null; trail?: Vec3[]; camera: { yaw: number; height?: number; dist?: number; target?: Vec3 };
+    /** Live playback: skip the depth-of-field pass to keep the frame rate up. */
+    fast?: boolean;
   }) {
     this.courtGroup.visible = true;
     this.renderPass.camera = this.camera;
@@ -851,18 +837,7 @@ export class StudioScene {
     this.racket.visible = !!grip;
     this.racket.position.set(0, 0, 0);
     if (grip) {
-      const g0 = handOf(side).addScaledVector(grip.dir, 0.05);
-      const head = g0.clone().addScaledVector(grip.dir, 0.68 * 0.72);
-      const tip = g0.clone().addScaledVector(grip.dir, 0.68);
-      place(this.racket.getObjectByName('shaft')!, g0, g0.clone().lerp(tip, 0.5));
-      const across = new THREE.Vector3().crossVectors(grip.face!, grip.dir).normalize();
-      const basis = new THREE.Matrix4().makeBasis(across, grip.dir, grip.face!);
-      for (const name of ['frame', 'strings']) {
-        const m = this.racket.getObjectByName(name) as THREE.Mesh;
-        m.position.copy(head);
-        m.quaternion.setFromRotationMatrix(basis);
-        m.scale.set(0.125, 0.165, name === 'frame' ? 0.15 : 1);
-      }
+      placeRacket(this.racket.getObjectByName('racket-model')!, handOf(side).addScaledVector(grip.dir, 0.02), grip.dir, grip.face!);
     }
 
     // Ball.
@@ -923,7 +898,7 @@ export class StudioScene {
 
     this.gtao.enabled = true;
     this.gtao.camera = this.camera;
-    this.bokeh.enabled = true;
+    this.bokeh.enabled = !d.fast;
     this.bokeh.camera = this.camera;
     const u = this.bokeh.uniforms as Record<string, THREE.IUniform>;
     u.focus.value = this.camera.position.distanceTo(chest);
