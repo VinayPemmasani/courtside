@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { Pt } from './athlete';
+import type { Grip, Pt } from './athlete';
 
 /**
  * The studio mannequin as a professionally made, rigged model, posed from the tracked landmarks.
@@ -153,7 +153,7 @@ export class RiggedMannequin {
     return Math.min(...['balll', 'ballr'].map((n) => this.worldPos(n).y - 0.02 * s), ...['footl', 'footr'].map((n) => this.worldPos(n).y - 0.1 * s));
   }
 
-  update(P: Pt, dominant: 'l' | 'r' = 'r') {
+  update(P: Pt, dominant: 'l' | 'r' = 'r', grip: Grip | null = null) {
     if (!this.loaded || !this.root) return;
     const root = this.root;
     const lh = P(23), rh = P(24), ls = P(11), rs = P(12);
@@ -199,7 +199,7 @@ export class RiggedMannequin {
     const hipFwd = Z.clone().applyQuaternion(dPelvis);
     /** The way a joint's point faces: away from the line between the limb's ends, else `fallback`. */
     const bendOut = (a: THREE.Vector3, j: THREE.Vector3, c: THREE.Vector3, fallback: THREE.Vector3) =>
-      j.clone().sub(a.clone().add(c).multiplyScalar(0.5)).addScaledVector(fallback, 0.015);
+      j.clone().sub(a.clone().add(c).multiplyScalar(0.5)).addScaledVector(fallback, 0.04);
 
     // Arms: upper arm aimed at the elbow with the elbow's point behind; forearm swung to the wrist; hand framed by its knuckles.
     for (const [side, sh, el, wr, ix, pk] of [['l', 11, 13, 15, 19, 17], ['r', 12, 14, 16, 20, 18]] as const) {
@@ -209,7 +209,14 @@ export class RiggedMannequin {
       this.swing(`lowerarm${side}`, `hand${side}`, W.clone().sub(E));
       let main = P(ix).add(P(pk)).multiplyScalar(0.5).sub(W);
       if (main.length() < 0.01) main = W.clone().sub(E);
-      const across = P(ix).sub(P(pk));
+      let across = P(ix).sub(P(pk));
+      if (side === dominant && grip) {
+        // The hitting hand holds the racket: knuckles between the forearm and the shaft, palm behind the strings.
+        main = W.clone().sub(E).normalize().multiplyScalar(0.45).addScaledVector(grip.dir, 0.55);
+        const palm = (grip.face ?? chestFwd).clone();
+        palm.addScaledVector(main, -palm.dot(main) / main.lengthSq());
+        across = side === 'r' ? new THREE.Vector3().crossVectors(main, palm) : new THREE.Vector3().crossVectors(palm, main);
+      }
       const bh = this.bindHand[side];
       this.aim(`hand${side}`, bh.main, bh.side, main, across.lengthSq() > 1e-8 ? across : bh.side.clone());
       this.curl(side, side === dominant ? 1 : 0.55);

@@ -14,6 +14,8 @@ import * as THREE from 'three';
 const UP = new THREE.Vector3(0, 1, 0);
 
 export type Pt = (i: number) => THREE.Vector3;
+/** The racket held in the hitting hand: shaft direction and string-face normal (court axes). */
+export type Grip = { dir: THREE.Vector3; face: THREE.Vector3 | null };
 
 const COLORS = {
   skin: '#b98468',
@@ -235,7 +237,7 @@ export class Athlete {
     }
   }
 
-  update(P: Pt, _dominant?: 'l' | 'r') {
+  update(P: Pt, _dominant?: 'l' | 'r', _grip?: Grip | null) {
     for (const l of this.limbs) {
       const a = P(l.a), b = P(l.b);
       for (const part of l.parts) place(part, a, b);

@@ -9,11 +9,13 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import type { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
-  anchorIndices, ballFlight, centreOfMass, COURT, deeperKnee, dirToCourt, estimateRacket, shareAt, strokeSpace, toCourt,
+  anchorIndices, ballFlight, centreOfMass, COURT, deeperKnee, dirToCourt, shareAt, strokeSpace, toCourt,
   type AnchorJoint, type BallFlight, type Handedness, type PoseFrame, type Status, type Stroke, type StrokeSpace, type Vec3, type WeightTransfer,
 } from '../core';
 import { alongPath, alongSegment, bodyDiscs, type Disc } from './layout';
-import { copyFrames, steadyBones } from '../core/tracking';
+import { steadyBones } from '../core/tracking';
+import { animationFrames, racketTrack } from '../core/motion';
+import type { RacketPose } from '../core/racket';
 import { Athlete } from './athlete';
 import { Mannequin, mannequinMaterials } from './mannequin';
 import { RiggedMannequin } from './rigged';
@@ -392,10 +394,25 @@ export class StudioScene {
     return out;
   }
 
-  private steadyFrames(frames: PoseFrame[]) {
+  /** The racket through a clip, per set of drawn frames. */
+  private tracks = new WeakMap<PoseFrame[], (RacketPose | null)[]>();
+  /** Where the figure's hand sat relative to the tracked wrist, per frame, for drawing the swing path. */
+  private gripOffsets = new WeakMap<PoseFrame[], Map<string, THREE.Vector3>>();
+
+  private track(frames: PoseFrame[], hand: Handedness, fps: number) {
+    let t = this.tracks.get(frames);
+    if (!t) {
+      t = racketTrack(frames, hand, fps);
+      this.tracks.set(frames, t);
+    }
+    return t;
+  }
+
+  /** Smoothed for animation, then every limb held to one length. */
+  private steadyFrames(frames: PoseFrame[], fps: number) {
     let f = this.steady.get(frames);
     if (!f) {
-      f = copyFrames(frames);
+      f = animationFrames(frames, fps);
       steadyBones(f);
       this.steady.set(frames, f);
     }
@@ -411,10 +428,11 @@ export class StudioScene {
    * metres with one scale for the whole clip) and keeps the model's depth. In pose axes, so the
    * rest of the scene (racket, path, rings, labels) works unchanged with a plain identity space.
    */
-  private footageFrames(frames: PoseFrame[], video: { width: number; height: number }) {
+  private footageFrames(source: PoseFrame[], video: { width: number; height: number }, fps: number) {
     const key = `${video.width}x${video.height}`;
-    const hit = this.footageCache.get(frames);
+    const hit = this.footageCache.get(source);
     if (hit && hit.key === key) return hit;
+    const frames = animationFrames(source, fps);
     // Pixels per metre: the image spread of the body over its world spread, median over the clip.
     const ks: number[] = [];
     for (const f of frames) {
@@ -436,7 +454,7 @@ export class StudioScene {
       world: f.world && f.image ? f.world.map((p, j) => ({ x: (f.image![j].x * video.width) / k, y: (f.image![j].y * video.height) / k, z: p.z })) : null,
     }));
     const res = { key, frames: out, w: video.width / k, h: video.height / k };
-    this.footageCache.set(frames, res);
+    this.footageCache.set(source, res);
     return res;
   }
 
@@ -449,14 +467,15 @@ export class StudioScene {
     if (footage) return this.renderFootage(raw);
     this.renderPass.camera = this.camera;
     this.scene.fog = this.fog;
-    const input = { ...raw, frames: this.steadyFrames(raw.frames) };
+    const input = { ...raw, frames: this.steadyFrames(raw.frames, raw.fps) };
     const w = input.frames[input.i]?.world;
     const { space, flight } = this.spaceFor(input);
     this.figure.group.visible = !!w;
     this.racket.visible = !!w;
     this.current = w ? { w, space } : null;
     const P = (i: number) => v3(toCourt(w![i], space));
-    if (w) this.pose(w, P, space, input.hand);
+    this.racketPath(input, space, true);
+    if (w) this.pose(input, P, space);
 
     const o = space.origin;
     const z = input.zoom ?? 1;
@@ -476,7 +495,6 @@ export class StudioScene {
     this.fill.target.position.copy(chest);
     (this.scene.getObjectByName('rim') as THREE.DirectionalLight).position.copy(chest).addScaledVector(look, 4).addScaledVector(right, -2).setY(4);
 
-    this.racketPath(input, space);
     this.ballAndTrail(input, flight);
     this.drawEyeLine(input, P);
     this.drawRings(input, P);
@@ -501,7 +519,7 @@ export class StudioScene {
   private static FLAT: StrokeSpace = { yaw: 0, floor: 0, origin: { x: 0, y: 0, z: 0 } };
 
   private renderFootage(raw: SceneInput) {
-    const ft = this.footageFrames(raw.frames, raw.video!);
+    const ft = this.footageFrames(raw.frames, raw.video!, raw.fps);
     const input: SceneInput = { ...raw, frames: ft.frames, ball: false };
     const space = StudioScene.FLAT;
     const w = input.frames[input.i]?.world;
@@ -509,7 +527,8 @@ export class StudioScene {
     this.racket.visible = !!w;
     this.current = w ? { w, space } : null;
     const P = (i: number) => v3(toCourt(w![i], space));
-    if (w) this.pose(w, P, space, input.hand, false);
+    this.racketPath(input, space, false);
+    if (w) this.pose(input, P, space, false);
 
     // The video frame, front on: x right 0..w, y up 0..-h (image y runs down), filling the canvas.
     const canvasAspect = this.canvas.width / this.canvas.height;
@@ -536,7 +555,6 @@ export class StudioScene {
     this.bokeh.enabled = false;
     (this.scene.getObjectByName('under') as THREE.PointLight).position.set(c.x, c.y - 0.9, 1);
 
-    this.racketPath(input, space);
     this.ballAndTrail(input, null);
     this.drawEyeLine(input, P);
     this.drawRings(input, P, true);
@@ -576,22 +594,40 @@ export class StudioScene {
     this.camera.lookAt(o.x * (0.6 * t + (1 - t)), 0.15 * t + 1.0 * (1 - t), o.z - 6.5 * t);
   }
 
-  private pose(w: Vec3[], P: (i: number) => THREE.Vector3, space: StrokeSpace, hand: Handedness, onCourt = true) {
-    // Keep the shoes on the court: lift the figure if tracking puts a foot below the floor.
-    const side = hand === 'left' ? 'l' : 'r';
+  /**
+   * Pose the figure for one frame and return where its hand is relative to the tracked wrist (the
+   * rigged model keeps its own arm lengths, so the racket follows the model's hand, not the dot).
+   */
+  private placeFigure(input: SceneInput, i: number, P: (i: number) => THREE.Vector3, r: RacketPose | null, space: StrokeSpace, onCourt: boolean) {
+    const side = input.hand === 'left' ? 'l' : 'r';
     this.figure.group.position.y = 0;
-    this.figure.update(P, side);
+    const grip = r ? { dir: v3(dirToCourt(r.dir, space)).normalize(), face: r.face ? v3(dirToCourt(r.face, space)).normalize() : null } : null;
+    this.figure.update(P, side, grip);
     const rig = this.figure === this.rigged ? this.rigged : null;
-    const lowest = rig ? rig.lowest() : Math.min(...[29, 30, 31, 32].map((i) => P(i).y));
+    // Keep the shoes on the court: lift the figure if tracking puts a foot below the floor.
+    const lowest = rig ? rig.lowest() : Math.min(...[29, 30, 31, 32].map((k) => P(k).y));
     const lift = onCourt && lowest < 0.0 ? -lowest : 0;
     this.figure.group.position.y = lift;
-    this.racket.position.set(0, lift, 0);
-    // The rigged model keeps its own arm lengths: move the racket so its grip stays in the model's hand.
+    this.figure.group.updateMatrixWorld(true);
     const modelHand = rig?.hand(side);
-    if (modelHand) this.racket.position.copy(modelHand.sub(P(hand === 'left' ? 15 : 16)));
+    const offset = modelHand ? modelHand.sub(P(input.hand === 'left' ? 15 : 16)) : new THREE.Vector3(0, lift, 0);
+    this.gripCache(input).set(i, offset.clone());
+    return offset;
+  }
 
-    // Racket.
-    const r = estimateRacket(w, hand);
+  private gripCache(input: SceneInput) {
+    let m = this.gripOffsets.get(input.frames);
+    if (!m) this.gripOffsets.set(input.frames, (m = new Map()));
+    const key = `${this.figure === this.rigged ? 'rig' : 'fig'}|${input.stroke?.id ?? ''}|${input.view ?? ''}`;
+    return {
+      get: (i: number) => m!.get(`${key}|${i}`),
+      set: (i: number, v: THREE.Vector3) => m!.set(`${key}|${i}`, v),
+    };
+  }
+
+  private pose(input: SceneInput, P: (i: number) => THREE.Vector3, space: StrokeSpace, onCourt = true) {
+    const r = this.track(input.frames, input.hand, input.fps)[input.i] ?? null;
+    this.racket.position.copy(this.placeFigure(input, input.i, P, r, space, onCourt));
     this.racket.visible = !!r;
     this.shown.racket = [];
     if (!r) return;
@@ -602,7 +638,7 @@ export class StudioScene {
     const dir = tip.clone().sub(grip).normalize();
     const shaft = this.racket.getObjectByName('shaft') as THREE.Mesh;
     place(shaft, grip, grip.clone().lerp(tip, 0.5));
-    const face = r.face ? v3(toCourt({ x: r.grip.x + r.face.x, y: r.grip.y + r.face.y, z: r.grip.z + r.face.z }, space)).sub(grip).normalize() : new THREE.Vector3().crossVectors(dir, UP).normalize();
+    const face = r.face ? v3(dirToCourt(r.face, space)).normalize() : new THREE.Vector3().crossVectors(dir, UP).normalize();
     const across = new THREE.Vector3().crossVectors(face, dir).normalize();
     const basis = new THREE.Matrix4().makeBasis(across, dir, face);
     for (const name of ['frame', 'strings']) {
@@ -613,15 +649,26 @@ export class StudioScene {
     }
   }
 
-  private racketPath(input: SceneInput, space: StrokeSpace) {
+  /**
+   * The racket head's path from the start of the stroke to this frame, drawn where the racket in
+   * the figure's hand actually went (the figure is posed once per path frame and remembered).
+   * Called before the current frame is posed.
+   */
+  private racketPath(input: SceneInput, space: StrokeSpace, onCourt: boolean) {
     if (this.path) { this.scene.remove(this.path); this.path.geometry.dispose(); this.path = null; }
     this.shown.path = [];
     const st = input.stroke;
     if (!st) return;
+    const track = this.track(input.frames, input.hand, input.fps);
+    const cache = this.gripCache(input);
     const pts: THREE.Vector3[] = [];
     for (let i = st.startFrame; i <= Math.min(input.i, st.endFrame); i++) {
-      const r = estimateRacket(input.frames[i]?.world ?? null, input.hand);
-      if (r) pts.push(v3(toCourt(r.head, space)));
+      const r = track[i];
+      const w = input.frames[i]?.world;
+      if (!r || !w) continue;
+      const P = (k: number) => v3(toCourt(w[k], space));
+      const off = cache.get(i) ?? this.placeFigure(input, i, P, r, space, onCourt);
+      pts.push(v3(toCourt(r.head, space)).add(off));
     }
     if (pts.length < 3) return;
     this.shown.path = pts;

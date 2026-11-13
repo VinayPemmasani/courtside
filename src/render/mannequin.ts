@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { basis, ellipsoid, flipZ, Loft, type Pt } from './athlete';
+import { basis, ellipsoid, flipZ, Loft, type Grip, type Pt } from './athlete';
 
 /**
  * The studio mannequin: a glossy, jointed figure in the style of an artist's posing model.
@@ -161,7 +161,7 @@ export class Mannequin {
     for (let k = 0; k < 2; k++) this.feet.push({ foot: add(sphere, shell), toes: add(sphere, shell) });
   }
 
-  update(P: Pt, _dominant?: 'l' | 'r') {
+  update(P: Pt, _dominant?: 'l' | 'r', _grip?: Grip | null) {
     for (const s of this.segs) span(s.mesh, P(s.a), P(s.b), s.gapA, s.gapB);
     for (const b of this.balls) b.mesh.position.copy(P(b.i));
 
