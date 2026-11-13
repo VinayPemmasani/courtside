@@ -45,6 +45,7 @@ export function SessionView({ id }: { id: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [studio, setStudio] = useState(false);
   const [studioView, setStudioView] = useState<'footage' | 'coach'>('footage');
+  const [figure, setFigure] = useState<'mannequin' | 'athlete'>('mannequin');
   const [placement, setPlacement] = useState(false);
   const [corners, setCorners] = useState<Vec2[] | null>(null);
   const [selBounce, setSelBounce] = useState<string>();
@@ -108,13 +109,13 @@ export function SessionView({ id }: { id: string }) {
   }, [session, save]);
 
   // Drawing reads the latest state through a ref, so the playback loop never sees stale data.
-  const latest = useRef({ session, prepared, stroke, player, coach, selCallout, studio, studioView, placement, corners, placed, selBounce });
-  latest.current = { session, prepared, stroke, player, coach, selCallout, studio, studioView, placement, corners, placed, selBounce };
+  const latest = useRef({ session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce });
+  latest.current = { session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce };
 
   const draw = useCallback(() => {
     const v = videoRef.current;
     const c = canvasRef.current;
-    const { session: s, prepared: p, stroke: st, player: pl, selCallout: sel, studio: look, studioView: camView, placement: court, corners: pending, placed: bounces, selBounce: selB } = latest.current;
+    const { session: s, prepared: p, stroke: st, player: pl, selCallout: sel, studio: look, studioView: camView, figure: fig, placement: court, corners: pending, placed: bounces, selBounce: selB } = latest.current;
     if (!v || !c || !s || !p || !pl || !v.videoWidth) return;
     const dpr = window.devicePixelRatio || 1;
     const W = Math.round(c.clientWidth * dpr);
@@ -137,7 +138,7 @@ export function SessionView({ id }: { id: string }) {
       studioScene.current ??= new StudioScene(W, H);
       const ph = inStroke && v.paused ? inStroke.phases.find((x) => x.frame === i) : undefined;
       const weight = inStroke ? weightTransfer(p.frames, inStroke, pl.hand) : null;
-      renderStudio({ ctx: view.ctx, W, H }, studioScene.current, { frames: p.frames, i, fps: s.fps, hand: pl.hand, stroke: inStroke, weight, view: camView, video: { width: s.width, height: s.height } }, {
+      renderStudio({ ctx: view.ctx, W, H }, studioScene.current, { frames: p.frames, i, fps: s.fps, hand: pl.hand, stroke: inStroke, weight, view: camView, figure: fig, video: { width: s.width, height: s.height } }, {
         callouts: ph ? inStroke!.callouts.filter((x) => x.phaseId === ph.id) : [],
         gauge: shareAt(weight, i),
         headline: ph ? phaseHeadline(inStroke!, ph) : undefined,
@@ -156,7 +157,7 @@ export function SessionView({ id }: { id: string }) {
     }
   }, []);
 
-  useEffect(() => { draw(); }, [draw, session, frame, coach, selCallout, prepared, studio, studioView, placement, corners, placed, selBounce]);
+  useEffect(() => { draw(); }, [draw, session, frame, coach, selCallout, prepared, studio, studioView, figure, placement, corners, placed, selBounce]);
   useEffect(() => { if (studio) loadStudioFonts().then(() => draw()); }, [studio, draw]);
   useEffect(() => () => studioScene.current?.dispose(), []);
 
@@ -375,11 +376,17 @@ export function SessionView({ id }: { id: string }) {
         {setup && <SetupBadge report={setup} />}
         <div className="spacer" />
         <label className="toggle" title="Tap the court corners once, then tap each bounce for line calls, depth and speed"><input type="checkbox" checked={placement} onChange={(e) => { setPlacement(e.target.checked); if (e.target.checked) setStudio(false); else setCorners(null); }} /> Shot placement</label>
-        <label className="toggle" title="3D player on a virtual court, with racket path, ball flight and weight transfer"><input type="checkbox" checked={studio} onChange={(e) => { setStudio(e.target.checked); if (e.target.checked) { setPlacement(false); setCorners(null); } }} /> Studio look</label>
+        <label className="toggle" title="3D mannequin under an arena spotlight, with racket path, eye line, ball flight and weight transfer"><input type="checkbox" checked={studio} onChange={(e) => { setStudio(e.target.checked); if (e.target.checked) { setPlacement(false); setCorners(null); } }} /> Studio look</label>
         {studio && (
           <div className="seg" title="Where the 3D camera stands">
             <button className={studioView === 'footage' ? 'on' : ''} onClick={() => setStudioView('footage')}>As filmed</button>
             <button className={studioView === 'coach' ? 'on' : ''} onClick={() => setStudioView('coach')}>On court</button>
+          </div>
+        )}
+        {studio && (
+          <div className="seg" title="How the 3D player looks">
+            <button className={figure === 'mannequin' ? 'on' : ''} onClick={() => setFigure('mannequin')}>Mannequin</button>
+            <button className={figure === 'athlete' ? 'on' : ''} onClick={() => setFigure('athlete')}>Player</button>
           </div>
         )}
         <label className="toggle"><input type="checkbox" checked={coach} onChange={(e) => setCoach(e.target.checked)} /> Coach editing</label>

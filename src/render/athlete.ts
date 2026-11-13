@@ -42,13 +42,13 @@ function mats() {
 }
 
 /** A unit-length (0..1 along +y) lathe from a radius profile [t, r][]. */
-function lathe(profile: [number, number][], segs = 28) {
+export function lathe(profile: [number, number][], segs = 28) {
   const pts = profile.map(([t, r]) => new THREE.Vector2(r, t));
   return new THREE.LatheGeometry(pts, segs);
 }
 
 /** Stretch a unit-height mesh (base at the origin, along +y) from a to b, twisting so local +z follows `front` when given. */
-function place(m: THREE.Object3D, a: THREE.Vector3, b: THREE.Vector3) {
+export function place(m: THREE.Object3D, a: THREE.Vector3, b: THREE.Vector3) {
   const d = b.clone().sub(a);
   const len = Math.max(d.length(), 1e-4);
   m.position.copy(a);
@@ -57,7 +57,7 @@ function place(m: THREE.Object3D, a: THREE.Vector3, b: THREE.Vector3) {
 }
 
 /** Basis from a side (x) and an up (y) direction; z = x × y. */
-function basis(side: THREE.Vector3, up: THREE.Vector3) {
+export function basis(side: THREE.Vector3, up: THREE.Vector3) {
   const y = up.clone().normalize();
   let x = side.clone().addScaledVector(y, -side.dot(y));
   if (x.lengthSq() < 1e-8) x = new THREE.Vector3(1, 0, 0).addScaledVector(y, -y.x);
@@ -66,17 +66,17 @@ function basis(side: THREE.Vector3, up: THREE.Vector3) {
   return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
 }
 
-function ellipsoid(m: THREE.Object3D, centre: THREE.Vector3, q: THREE.Quaternion, radii: THREE.Vector3) {
+export function ellipsoid(m: THREE.Object3D, centre: THREE.Vector3, q: THREE.Quaternion, radii: THREE.Vector3) {
   m.position.copy(centre);
   m.quaternion.copy(q);
   m.scale.copy(radii);
 }
 
 /** One ring of the torso loft: height along the hip→shoulder line (0 = hip line, 1 = shoulder line) and half-widths. */
-interface Ring { h: number; a: (hip: number, sh: number) => number; b: number; fwd?: number }
+export interface Ring { h: number; a: (hip: number, sh: number) => number; b: number; fwd?: number }
 
 /** A loft whose rings are positioned every frame; closed at both ends. */
-class Loft {
+export class Loft {
   readonly mesh: THREE.Mesh;
   private pos: THREE.BufferAttribute;
   constructor(readonly rings: Ring[], material: THREE.Material, readonly segs = 32) {
@@ -338,7 +338,7 @@ export class Athlete {
   }
 }
 
-function flipZ(q: THREE.Quaternion) {
+export function flipZ(q: THREE.Quaternion) {
   // Rotate 180° about local y: x and z flip, y stays.
   q.multiply(new THREE.Quaternion().setFromAxisAngle(UP, Math.PI));
 }

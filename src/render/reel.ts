@@ -46,7 +46,7 @@ export function phaseHeadline(stroke: Stroke, p: Phase, total?: number): Headlin
 }
 
 /**
- * A 1080×1920 coach reel in the 3D studio: the player as a mannequin on a virtual court, with a
+ * A 1080×1920 coach reel in the 3D studio: the player as a glossy mannequin on a spotlit court, with a
  * slowly orbiting camera. A title ("THE PROBLEM / FOREHAND / TURN EARLIER."), then each phase in
  * slow motion and held with its rings and labels, then the full swing with the ball flight and
  * the weight shift summed up.

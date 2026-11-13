@@ -3,6 +3,10 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import type { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
   anchorIndices, ballFlight, centreOfMass, COURT, deeperKnee, dirToCourt, estimateRacket, shareAt, strokeSpace, toCourt,
@@ -11,18 +15,33 @@ import {
 import { alongPath, alongSegment, bodyDiscs, type Disc } from './layout';
 import { copyFrames, steadyBones } from '../core/tracking';
 import { Athlete } from './athlete';
+import { Mannequin } from './mannequin';
 
 /**
- * The 3D studio: the player as a dressed 3D athlete (see athlete.ts) driven by the pose's world landmarks,
- * standing on a dark wireframe court with glowing lines, ball and highlight rings.
+ * The 3D studio ("arena" look): the player as a glossy jointed mannequin (mannequin.ts; the dressed
+ * athlete in athlete.ts is still available) driven by the pose's world landmarks, on a blue hard court
+ * under a single overhead spotlight, in the style of a broadcast explainer.
+ *
+ * How the look is built, all real time in WebGL:
+ *  - Physically based materials: a clear-coated porcelain shell lit by a soft studio environment map
+ *    (PMREM of RoomEnvironment) for the glossy highlights, plus one spotlight with soft PCF shadows.
+ *  - A visible light shaft (an additive cone with a soft edge) and a navy gradient backdrop with fog,
+ *    so the court falls away into darkness outside the pool of light.
+ *  - Post-processing: ground-truth ambient occlusion (GTAO) for contact shadows where feet meet the
+ *    court and limbs cross, a shallow depth of field focused on the player, gentle bloom on the traces,
+ *    and a vignette.
+ *  - Coaching traces: the swing path, the ball flight and a dashed eye line from the head to the ball.
  */
 
 const NEON = new THREE.Color(1.35, 0.85, 0.22); // amber #f5b544 pushed past 1 so it blooms
 const RED = new THREE.Color(2.2, 0.42, 0.7); // rose #ff5c7a, bloomed
-const LINE = new THREE.Color(0.16, 0.6, 0.55); // teal court lines, just under bloom
-const NET = new THREE.Color(0.85, 0.89, 0.98);
-const VIOLET = new THREE.Color(0.75, 0.62, 1.6); // ball flight, bloomed
-const BALL = new THREE.Color(1.15, 1.35, 0.35);
+const SWING = new THREE.Color(1.5, 0.66, 0.32); // warm orange swing path
+const LINE = new THREE.Color('#e9eef8'); // court lines
+const NET = new THREE.Color('#f4f6fb');
+const EYE = new THREE.Color(0.45, 1.05, 1.6); // eye line, cyan, bloomed
+const VIOLET = new THREE.Color(0.5, 0.85, 1.5); // ball flight: pale blue
+const BALL = new THREE.Color('#d9f04a');
+const NAVY = '#040b1f';
 
 export interface Ring {
   anchor: AnchorJoint;
@@ -52,6 +71,10 @@ export interface SceneInput {
   view?: 'footage' | 'video' | 'coach';
   /** Video frame size in pixels; needed for the footage view. */
   video?: { width: number; height: number };
+  /** 'mannequin' (default): the glossy jointed figure. 'athlete': the dressed player. */
+  figure?: 'mannequin' | 'athlete';
+  /** Dashed line from the eyes to the ball while the ball is shown (default on). */
+  eyeLine?: boolean;
 }
 
 const v3 = (p: Vec3) => new THREE.Vector3(p.x, p.y, p.z);
@@ -64,11 +87,21 @@ export class StudioScene {
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
   private athlete = new Athlete();
+  private mannequin = new Mannequin();
+  private figure: Athlete | Mannequin = this.mannequin;
+  private gtao: GTAOPass;
+  private bokeh: BokehPass;
+  private spot!: THREE.SpotLight;
+  private fill!: THREE.DirectionalLight;
+  private shaft!: THREE.Mesh;
+  private eyeLine: THREE.Object3D | null = null;
+  /** Soft additive objects kept out of the depth-based passes (AO, depth of field). */
+  private soft: THREE.Object3D[] = [];
   /** Court, net, grid and shadow catcher: hidden in the footage view, where they would not line up with the video. */
   private courtGroup = new THREE.Group();
   /** Front-on camera for the footage view: the video frame itself, with no perspective of our own. */
   private ortho = new THREE.OrthographicCamera(0, 1, 0, -1, 0.1, 100);
-  private fog = new THREE.Fog('#05070c', 14, 38);
+  private fog = new THREE.Fog(NAVY, 7, 24);
   private renderPass!: RenderPass;
   private footageCache = new WeakMap<PoseFrame[], { key: string; frames: PoseFrame[]; w: number; h: number }>();
   /** Frames with constant limb lengths, per input clip, so the figure doesn't stretch. */
@@ -92,44 +125,70 @@ export class StudioScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.0;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
+    // Soft studio reflections for the glossy shell; the spotlight does the shaping.
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.3;
-    this.scene.background = new THREE.Color('#05070c');
+    this.scene.environmentIntensity = 0.32;
+    this.scene.environmentRotation.set(0, Math.PI * 0.75, 0);
+    this.scene.background = backdrop();
     this.scene.fog = this.fog;
 
     this.buildCourt();
     this.buildLights();
 
-    this.scene.add(this.athlete.group);
+    this.scene.add(this.athlete.group, this.mannequin.group);
 
-    // Racket: dark shaft, neon frame, faint strings.
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 1, 10).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: '#30343a', roughness: 0.5 }));
+    // Racket: graphite frame and shaft, pale strings.
+    const graphite = new THREE.MeshPhysicalMaterial({ color: '#15171c', roughness: 0.32, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.15 });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.017, 1, 12).translate(0, 0.5, 0), graphite);
     shaft.name = 'shaft';
-    const frame = new THREE.Mesh(new THREE.TorusGeometry(1, 0.06, 10, 48), new THREE.MeshBasicMaterial({ color: NEON, toneMapped: false }));
+    const frame = new THREE.Mesh(new THREE.TorusGeometry(1, 0.075, 12, 64), graphite);
     frame.name = 'frame';
-    const strings = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.95, 0.7, 0.28), transparent: true, opacity: 0.16, side: THREE.DoubleSide, toneMapped: false }));
+    const strings = new THREE.Mesh(new THREE.CircleGeometry(1, 48), new THREE.MeshStandardMaterial({ map: stringBed(), transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, roughness: 0.6 }));
     strings.name = 'strings';
+    for (const m of [shaft, frame, strings]) m.castShadow = true;
     this.racket.add(shaft, frame, strings);
     this.scene.add(this.racket);
 
-    this.ball = new THREE.Mesh(new THREE.SphereGeometry(0.075, 24, 16), new THREE.MeshBasicMaterial({ color: BALL, toneMapped: false }));
-    this.ballLight = new THREE.PointLight(new THREE.Color('#e9ff6a'), 1.6, 2, 2);
+    // Felt-yellow ball with a faint glow so it reads against the dark.
+    this.ball = new THREE.Mesh(new THREE.SphereGeometry(0.075, 32, 20), new THREE.MeshPhysicalMaterial({ color: BALL, roughness: 0.85, sheen: 1, sheenColor: new THREE.Color('#f6ffb0'), emissive: new THREE.Color('#8fa21a'), emissiveIntensity: 0.35 }));
+    this.ball.castShadow = true;
+    this.ballLight = new THREE.PointLight(new THREE.Color('#e9ff6a'), 0.6, 1.5, 2);
     this.scene.add(this.ball, this.ballLight);
 
-    // Soft violet pool under the player, and an amber glow under each foot for the weight split.
-    this.glow = this.floorGlow('157,140,255', 1.6, 0.22);
+    // Amber glow under each foot for the weight split (the spotlight's shadow now grounds the figure).
+    this.glow = this.floorGlow('157,140,255', 1.6, 0.0);
     this.footGlow = [this.floorGlow('245,181,68', 0.6, 0.55), this.floorGlow('245,181,68', 0.6, 0.55)];
+    this.soft.push(...this.footGlow, this.glow, this.ballLight);
 
     // Multisampled target: thin court lines stay solid instead of breaking into dashes at a distance.
     this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(width, height, { samples: 4, type: THREE.HalfFloatType }));
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(this.renderPass);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.38, 0.25, 1.05);
+    this.gtao = new GTAOPass(this.scene, this.camera, width, height);
+    this.gtao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.5, thickness: 1.2, scale: 1.1, samples: 16 });
+    this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+    this.gtao.blendIntensity = 0.85;
+    this.composer.addPass(this.withoutSoft(this.gtao));
+    this.bokeh = new BokehPass(this.scene, this.camera, { focus: 5, aperture: 0.0035, maxblur: 0.0055 });
+    this.composer.addPass(this.withoutSoft(this.bokeh));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.28, 0.35, 1.25);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+    this.composer.addPass(new ShaderPass(VIGNETTE));
     this.setSize(width, height);
+  }
+
+  /** Hide the additive glows, light shaft and traces while a pass draws the scene's depth or normals. */
+  private withoutSoft<T extends Pass>(pass: T): T {
+    const render = pass.render.bind(pass);
+    pass.render = (...args: Parameters<Pass['render']>) => {
+      const hidden = [...this.soft, this.shaft, this.trail, this.path, this.eyeLine, ...this.ringMeshes].filter((o): o is THREE.Object3D => !!o && o.visible);
+      hidden.forEach((o) => (o.visible = false));
+      try { render(...args); } finally { hidden.forEach((o) => (o.visible = true)); }
+    };
+    return pass;
   }
 
   get canvas() {
@@ -141,6 +200,7 @@ export class StudioScene {
     this.renderer.setSize(width, height, false);
     this.composer.setSize(width, height);
     this.bloom.resolution.set(width, height);
+    this.gtao.setSize(width, height);
     this.camera.aspect = width / height;
     // Portrait frames need a wider vertical view to keep the court in.
     this.camera.fov = width < height ? 50 : 38;
@@ -164,75 +224,100 @@ export class StudioScene {
   }
 
   private buildLights() {
-    this.scene.add(new THREE.HemisphereLight('#c8d0ff', '#05070c', 0.45));
-    const key = new THREE.DirectionalLight('#ffffff', 1.5);
-    key.name = 'key';
-    key.position.set(-4, 9, 18);
-    key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.bias = -0.0004;
-    key.shadow.normalBias = 0.045;
-    const sc = key.shadow.camera;
-    sc.left = -4; sc.right = 4; sc.top = 4; sc.bottom = -4; sc.near = 1; sc.far = 40;
-    key.target.position.set(1, 0, 12);
-    this.scene.add(key, key.target);
-    const rim = new THREE.DirectionalLight('#9d8cff', 1.8);
+    this.scene.add(new THREE.HemisphereLight('#9fb6ff', '#0a1430', 0.18));
+    // The key: one tall spotlight with a soft edge and soft shadows, like an arena light.
+    const spot = new THREE.SpotLight('#ffffff', 2.2, 0, 0.36, 0.75, 0);
+    spot.name = 'key';
+    spot.castShadow = true;
+    spot.shadow.mapSize.set(2048, 2048);
+    spot.shadow.radius = 6;
+    spot.shadow.bias = -0.0003;
+    spot.shadow.normalBias = 0.03;
+    spot.shadow.camera.near = 2;
+    spot.shadow.camera.far = 30;
+    this.spot = spot;
+    this.scene.add(spot, spot.target);
+    // Fill from the camera side so the figure never goes black where the spot doesn't reach.
+    this.fill = new THREE.DirectionalLight('#cfdcff', 0.55);
+    this.scene.add(this.fill, this.fill.target);
+    // A cool rim from behind to separate the white shell from the backdrop.
+    const rim = new THREE.DirectionalLight('#8fb0ff', 1.1);
+    rim.name = 'rim';
     rim.position.set(3, 4, 0);
     this.scene.add(rim);
-    const under = new THREE.PointLight('#9d8cff', 0.35, 2.5, 2);
+    const under = new THREE.PointLight('#6f8cff', 0.25, 2.5, 2);
     under.position.set(1, 0.3, 12.6);
     under.name = 'under';
     this.scene.add(under);
+    // The visible light shaft: a soft additive cone from the lamp to the court.
+    this.shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 1, 1, 64, 1, true).translate(0, -0.5, 0), new THREE.ShaderMaterial(SHAFT));
+    this.shaft.renderOrder = 10;
+    this.scene.add(this.shaft);
+  }
+
+  /** Aim the spotlight (and its visible shaft) at `target` from `from`. */
+  private aimSpot(from: THREE.Vector3, target: THREE.Vector3, shaft: boolean) {
+    this.spot.position.copy(from);
+    this.spot.target.position.copy(target);
+    this.spot.target.updateMatrixWorld();
+    this.shaft.visible = shaft;
+    if (!shaft) return;
+    const d = target.clone().sub(from);
+    const len = d.length();
+    const r = Math.tan(this.spot.angle) * len * 0.42;
+    this.shaft.position.copy(from);
+    this.shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), d.normalize());
+    this.shaft.scale.set(r, len, r);
   }
 
   private buildCourt() {
     this.scene.add(this.courtGroup);
-    // An unlit near-black floor, so the court reads like the app's dark panels, with shadows laid on a separate catcher.
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), new THREE.MeshBasicMaterial({ color: '#07090f' }));
-    floor.rotation.x = -Math.PI / 2;
-    this.courtGroup.add(floor);
-    const shadows = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.6 }));
-    shadows.rotation.x = -Math.PI / 2;
-    shadows.position.y = 0.001;
-    shadows.receiveShadow = true;
-    this.courtGroup.add(shadows);
-    const grid = new THREE.GridHelper(80, 80, '#1b2232', '#121826');
-    grid.position.y = 0.002;
-    const gm = grid.material as THREE.LineBasicMaterial;
-    gm.transparent = true;
-    gm.opacity = 0.55;
-    this.courtGroup.add(grid);
+    const L = COURT.length / 2, D = COURT.doubles / 2, S = COURT.singles / 2, V = COURT.service;
+    // Two-tone hard court: deep blue run-off, brighter blue inside the lines. Lit, so it takes the
+    // spotlight pool and the soft shadows directly.
+    const surface = (color: string, w: number, l: number, y: number) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, l), new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0, envMapIntensity: 0.08 }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.y = y;
+      m.receiveShadow = true;
+      this.courtGroup.add(m);
+      return m;
+    };
+    surface('#0f2c6e', 160, 160, 0);
+    surface('#1d4fb3', COURT.doubles, COURT.length, 0.001);
 
-    const lineMat = new THREE.MeshBasicMaterial({ color: LINE, toneMapped: false });
+    const lineMat = new THREE.MeshStandardMaterial({ color: LINE, roughness: 0.5, emissive: LINE, emissiveIntensity: 0.12 });
     const line = (x0: number, z0: number, x1: number, z1: number) => {
       const len = Math.hypot(x1 - x0, z1 - z0);
       const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, len), lineMat);
       m.rotation.x = -Math.PI / 2;
       m.rotation.z = -Math.atan2(x1 - x0, z1 - z0);
-      m.position.set((x0 + x1) / 2, 0.006, (z0 + z1) / 2);
+      m.position.set((x0 + x1) / 2, 0.004, (z0 + z1) / 2);
+      m.receiveShadow = true;
       this.courtGroup.add(m);
     };
-    const L = COURT.length / 2, D = COURT.doubles / 2, S = COURT.singles / 2, V = COURT.service;
     line(-D, -L, -D, L); line(D, -L, D, L); line(-S, -L, -S, L); line(S, -L, S, L);
     line(-D, -L, D, -L); line(-D, L, D, L);
     line(-S, -V, S, -V); line(-S, V, S, V); line(0, -V, 0, V);
     line(0, L, 0, L - 0.15); line(0, -L, 0, -L + 0.15);
 
-    // Net: posts, a glowing top band, and a faint mesh.
-    const post = new THREE.MeshBasicMaterial({ color: NET, toneMapped: false });
+    // Net: dark posts, a bright white band, and a dark see-through mesh.
+    const postMat = new THREE.MeshPhysicalMaterial({ color: '#1a1f2a', roughness: 0.4, clearcoat: 0.6 });
     for (const x of [-(D + 0.9), D + 0.9]) {
-      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, COURT.netPost, 8), post);
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, COURT.netPost, 12), postMat);
       p.position.set(x, COURT.netPost / 2, 0);
+      p.castShadow = true;
       this.courtGroup.add(p);
     }
-    const band = new THREE.Mesh(new THREE.BoxGeometry(COURT.doubles + 1.8, 0.05, 0.02), post);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(COURT.doubles + 1.8, 0.065, 0.025), new THREE.MeshStandardMaterial({ color: NET, roughness: 0.4, emissive: NET, emissiveIntensity: 0.35 }));
     band.position.set(0, COURT.net, 0);
+    band.castShadow = true;
     this.courtGroup.add(band);
     const pts: THREE.Vector3[] = [];
     const w = D + 0.9;
-    for (let x = -w; x <= w + 1e-6; x += 0.25) pts.push(new THREE.Vector3(x, 0, 0), new THREE.Vector3(x, COURT.net, 0));
-    for (let y = 0; y <= COURT.net + 1e-6; y += 0.15) pts.push(new THREE.Vector3(-w, y, 0), new THREE.Vector3(w, y, 0));
-    const mesh = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#6c768b', transparent: true, opacity: 0.16 }));
+    for (let x = -w; x <= w + 1e-6; x += 0.05) pts.push(new THREE.Vector3(x, 0, 0), new THREE.Vector3(x, COURT.net, 0));
+    for (let y = 0; y <= COURT.net + 1e-6; y += 0.05) pts.push(new THREE.Vector3(-w, y, 0), new THREE.Vector3(w, y, 0));
+    const mesh = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#0a0f1c', transparent: true, opacity: 0.55 }));
     this.courtGroup.add(mesh);
   }
 
@@ -352,16 +437,15 @@ export class StudioScene {
     const footage = (raw.view ?? (raw.video ? 'footage' : 'coach')) === 'footage' && raw.video;
     this.courtGroup.visible = !footage;
     this.glow.visible = false;
+    this.figure = raw.figure === 'athlete' ? this.athlete : this.mannequin;
+    this.athlete.group.visible = this.mannequin.group.visible = false;
     if (footage) return this.renderFootage(raw);
     this.renderPass.camera = this.camera;
     this.scene.fog = this.fog;
-    const key = this.scene.getObjectByName('key') as THREE.DirectionalLight;
-    key.position.set(-4, 9, 18);
-    key.target.position.set(1, 0, 12);
     const input = { ...raw, frames: this.steadyFrames(raw.frames) };
     const w = input.frames[input.i]?.world;
     const { space, flight } = this.spaceFor(input);
-    this.athlete.group.visible = !!w;
+    this.figure.group.visible = !!w;
     this.racket.visible = !!w;
     this.current = w ? { w, space } : null;
     const P = (i: number) => v3(toCourt(w![i], space));
@@ -372,11 +456,37 @@ export class StudioScene {
     if (input.view === 'video') this.videoCamera(space, input.orbit ?? 0, z);
     else this.coachCamera(space, input.orbit ?? 0, z);
 
+    // Spotlight high above, a little beyond the player and to the camera's right, so the shaft shows
+    // in the upper corner and the shadow falls toward the viewer.
+    const chest = w ? P(11).add(P(12)).add(P(23)).add(P(24)).multiplyScalar(0.25) : new THREE.Vector3(o.x, 1, o.z);
+    const look = chest.clone().sub(this.camera.position).setY(0);
+    if (look.lengthSq() < 1e-6) look.set(0, 0, -1);
+    look.normalize();
+    const right = new THREE.Vector3().crossVectors(look, UP).normalize();
+    const floorAt = new THREE.Vector3(chest.x, 0, chest.z);
+    this.aimSpot(floorAt.clone().addScaledVector(right, 2.6).addScaledVector(look, 2.2).setY(8.5), floorAt.clone().addScaledVector(look, 0.2), true);
+    this.fill.position.copy(this.camera.position).add(new THREE.Vector3(0, 2, 0));
+    this.fill.target.position.copy(chest);
+    (this.scene.getObjectByName('rim') as THREE.DirectionalLight).position.copy(chest).addScaledVector(look, 4).addScaledVector(right, -2).setY(4);
+
     this.racketPath(input, space);
     this.ballAndTrail(input, flight);
+    this.drawEyeLine(input, P);
     this.drawRings(input, P);
     this.weightGlow(input, P);
+    this.glow.visible = false;
     (this.scene.getObjectByName('under') as THREE.PointLight).position.set(o.x, 0.3, o.z + 0.4);
+
+    // Depth of field focused on the player; AO for contact shading.
+    this.gtao.enabled = true;
+    this.gtao.camera = this.camera;
+    this.bokeh.enabled = true;
+    this.bokeh.camera = this.camera;
+    const u = this.bokeh.uniforms as Record<string, THREE.IUniform>;
+    u.focus.value = this.camera.position.distanceTo(chest);
+    u.nearClip.value = this.camera.near;
+    u.farClip.value = this.camera.far;
+    u.aspect.value = this.camera.aspect;
     this.composer.render();
   }
 
@@ -388,7 +498,7 @@ export class StudioScene {
     const input: SceneInput = { ...raw, frames: ft.frames, ball: false };
     const space = StudioScene.FLAT;
     const w = input.frames[input.i]?.world;
-    this.athlete.group.visible = !!w;
+    this.figure.group.visible = !!w;
     this.racket.visible = !!w;
     this.current = w ? { w, space } : null;
     const P = (i: number) => v3(toCourt(w![i], space));
@@ -408,14 +518,20 @@ export class StudioScene {
     this.renderPass.camera = this.ortho;
     this.scene.fog = null;
 
-    // Light from the camera side, above and to the left, so the figure reads in the camera's view.
+    // Spot from the camera side, above and to the left, so the figure reads in the camera's view.
     const c = w ? P(23).add(P(24)).multiplyScalar(0.5) : new THREE.Vector3(cx, cy, 0);
-    const key = this.scene.getObjectByName('key') as THREE.DirectionalLight | undefined;
-    if (key) { key.position.set(c.x - 3, c.y + 5, 8); key.target.position.copy(c); }
+    this.aimSpot(new THREE.Vector3(c.x - 2.5, c.y + 6, 7), c, false);
+    this.fill.position.set(c.x + 2, c.y + 1, 10);
+    this.fill.target.position.copy(c);
+    (this.scene.getObjectByName('rim') as THREE.DirectionalLight).position.set(c.x + 3, c.y + 3, -4);
+    // The depth-based passes assume a perspective camera.
+    this.gtao.enabled = false;
+    this.bokeh.enabled = false;
     (this.scene.getObjectByName('under') as THREE.PointLight).position.set(c.x, c.y - 0.9, 1);
 
     this.racketPath(input, space);
     this.ballAndTrail(input, null);
+    this.drawEyeLine(input, P);
     this.drawRings(input, P, true);
     this.footGlow.forEach((g) => (g.visible = false));
     this.composer.render();
@@ -457,9 +573,9 @@ export class StudioScene {
     // Keep the shoes on the court: lift the figure if tracking puts a foot below the floor.
     const lowest = Math.min(...[29, 30, 31, 32].map((i) => P(i).y));
     const lift = onCourt && lowest < 0.0 ? -lowest : 0;
-    this.athlete.group.position.y = lift;
+    this.figure.group.position.y = lift;
     this.racket.position.y = lift;
-    this.athlete.update(P);
+    this.figure.update(P);
 
     // Racket.
     const r = estimateRacket(w, hand);
@@ -496,7 +612,7 @@ export class StudioScene {
     }
     if (pts.length < 3) return;
     this.shown.path = pts;
-    this.path = tube(pts, 0.018, NEON);
+    this.path = tube(pts, 0.012, SWING);
     this.scene.add(this.path);
   }
 
@@ -519,8 +635,26 @@ export class StudioScene {
     }
     if (pts.length < 3) return;
     this.shown.flight = [...pts, this.ball.position.clone()];
-    this.trail = tube(pts, 0.016, VIOLET);
+    this.trail = tube(pts, 0.01, VIOLET);
     this.scene.add(this.trail);
+  }
+
+  /** Dashed line from between the eyes to the ball: where the player should be looking. */
+  private drawEyeLine(input: SceneInput, P: (i: number) => THREE.Vector3) {
+    if (this.eyeLine) { this.scene.remove(this.eyeLine); disposeTree(this.eyeLine); this.eyeLine = null; }
+    const w = input.frames[input.i]?.world;
+    if (!w || input.eyeLine === false || !this.ball.visible) return;
+    const eyes = P(2).add(P(5)).multiplyScalar(0.5).add(new THREE.Vector3(0, this.figure.group.position.y, 0));
+    const to = this.ball.position.clone();
+    const d = to.clone().sub(eyes);
+    const len = d.length();
+    if (len < 0.2) return;
+    // Start just in front of the face and stop short of the ball.
+    this.eyeLine = dashes(eyes.addScaledVector(d, 0.09 / len), to.addScaledVector(d, -0.1 / len), EYE);
+    this.scene.add(this.eyeLine);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.018, 12, 8), new THREE.MeshBasicMaterial({ color: EYE, toneMapped: false }));
+    dot.position.copy(eyes);
+    this.eyeLine.add(dot);
   }
 
   private drawRings(input: SceneInput, P: (i: number) => THREE.Vector3, frontOn = false) {
@@ -592,3 +726,109 @@ function tube(pts: THREE.Vector3[], r: number, color: THREE.Color) {
   const curve = new THREE.CatmullRomCurve3(pts);
   return new THREE.Mesh(new THREE.TubeGeometry(curve, Math.min(200, pts.length * 3), r, 8, false), new THREE.MeshBasicMaterial({ color, toneMapped: false, transparent: true, opacity: 0.95 }));
 }
+
+function disposeTree(o: THREE.Object3D) {
+  o.traverse((x) => {
+    const m = x as THREE.Mesh;
+    m.geometry?.dispose();
+    const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+    if (Array.isArray(mat)) mat.forEach((k) => k.dispose()); else mat?.dispose();
+  });
+}
+
+/** A dashed line of short glowing capsules from a to b (dash and gap in metres). */
+function dashes(a: THREE.Vector3, b: THREE.Vector3, color: THREE.Color, dash = 0.07, gap = 0.05, r = 0.0065) {
+  const d = b.clone().sub(a);
+  const len = d.length();
+  const n = Math.max(1, Math.floor((len + gap) / (dash + gap)));
+  const geo = new THREE.CylinderGeometry(r, r, dash, 8);
+  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color, toneMapped: false }), n);
+  const q = new THREE.Quaternion().setFromUnitVectors(UP, d.clone().normalize());
+  const m = new THREE.Matrix4();
+  const step = len / n;
+  for (let k = 0; k < n; k++) {
+    m.compose(a.clone().addScaledVector(d, ((k + 0.5) * step) / len), q, new THREE.Vector3(1, Math.min(1, step / (dash + gap)), 1));
+    mesh.setMatrixAt(k, m);
+  }
+  const g = new THREE.Group();
+  g.add(mesh);
+  return g;
+}
+
+/** Navy backdrop: lighter toward the upper right where the lamp hangs, near black at the bottom. */
+function backdrop() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 512;
+  const x = c.getContext('2d')!;
+  const v = x.createLinearGradient(0, 0, 0, 512);
+  v.addColorStop(0, '#0b1d4a');
+  v.addColorStop(0.55, '#06122f');
+  v.addColorStop(1, NAVY);
+  x.fillStyle = v;
+  x.fillRect(0, 0, 256, 512);
+  const r = x.createRadialGradient(200, 40, 0, 200, 40, 260);
+  r.addColorStop(0, 'rgba(70,110,210,0.55)');
+  r.addColorStop(1, 'rgba(70,110,210,0)');
+  x.fillStyle = r;
+  x.fillRect(0, 0, 256, 512);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** A racket string bed: a pale cross-hatch with transparent gaps. */
+function stringBed() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const x = c.getContext('2d')!;
+  x.strokeStyle = 'rgba(236,240,248,0.95)';
+  x.lineWidth = 3;
+  for (let k = 8; k < 256; k += 16) {
+    x.beginPath(); x.moveTo(k, 0); x.lineTo(k, 256); x.stroke();
+    x.beginPath(); x.moveTo(0, k); x.lineTo(256, k); x.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** The light shaft: brightest along the axis and near the lamp, fading at the edges and toward the floor. */
+const SHAFT: THREE.ShaderMaterialParameters = {
+  transparent: true,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending,
+  fog: false,
+  uniforms: { color: { value: new THREE.Color('#7aa2ff') }, strength: { value: 0.22 } },
+  vertexShader: /* glsl */ `
+    varying vec3 vN; varying vec3 vV; varying float vH;
+    void main() {
+      vH = -position.y; // 0 at the lamp, 1 at the floor
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vN = normalize(normalMatrix * normal);
+      vV = normalize(-mv.xyz);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */ `
+    uniform vec3 color; uniform float strength;
+    varying vec3 vN; varying vec3 vV; varying float vH;
+    void main() {
+      float edge = pow(abs(dot(normalize(vN), normalize(vV))), 3.0);
+      float fall = smoothstep(0.0, 0.05, vH) * (1.0 - 0.8 * vH);
+      gl_FragColor = vec4(color * strength * edge * fall, 1.0);
+    }`,
+};
+
+/** Darken the corners a little, like a lens. */
+const VIGNETTE = {
+  uniforms: { tDiffuse: { value: null }, amount: { value: 0.55 } },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float amount; varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec2 p = vUv - 0.5;
+      float v = smoothstep(0.85, 0.2, length(p * vec2(1.0, 1.15)));
+      gl_FragColor = vec4(c.rgb * mix(1.0 - amount, 1.0, v), c.a);
+    }`,
+};
