@@ -60,21 +60,24 @@ export function SessionView({ id }: { id: string }) {
 
   useEffect(() => {
     let objectUrl: string | undefined;
+    let dead = false;
     (async () => {
       const s = await store.session(id);
       if (!s) return;
       const ps = await store.players();
-      const blob = await store.video(id);
       setPlayer(ps.find((p) => p.id === s.playerId));
       setSession(s);
       setStrokeId(s.strokes[0]?.id);
-      if (blob) {
+      // On a second device the video may still need to come down from the cloud.
+      const blob = await store.video(id);
+      if (blob && !dead) {
         objectUrl = URL.createObjectURL(blob);
         grabber.current = new FrameGrabber(objectUrl);
         setUrl(objectUrl);
       }
     })();
     return () => {
+      dead = true;
       grabber.current?.dispose();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
