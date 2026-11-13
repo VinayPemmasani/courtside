@@ -188,7 +188,7 @@ export class StudioScene {
   private withoutSoft<T extends Pass>(pass: T): T {
     const render = pass.render.bind(pass);
     pass.render = (...args: Parameters<Pass['render']>) => {
-      const hidden = [...this.soft, this.shaft, this.trail, this.path, this.eyeLine, ...this.ringMeshes].filter((o): o is THREE.Object3D => !!o && o.visible);
+      const hidden = [...this.soft, this.shaft, this.trail, this.path, this.eyeLine, this.drillTrail, ...this.ringMeshes].filter((o): o is THREE.Object3D => !!o && o.visible);
       hidden.forEach((o) => (o.visible = false));
       try { render(...args); } finally { hidden.forEach((o) => (o.visible = true)); }
     };
@@ -753,6 +753,189 @@ export class StudioScene {
       g.scale.setScalar(0.35 + 0.7 * amount);
       (g.material as THREE.MeshBasicMaterial).opacity = 0.2 + 0.6 * amount;
     });
+  }
+
+  // ---------- Drills: a key-framed body instead of a tracked clip ----------
+
+  private props = new THREE.Group();
+  private propMeshes: { med: THREE.Mesh; band: THREE.Mesh | null; cones: THREE.Object3D[] } | null = null;
+  private drillTrail: THREE.Mesh | null = null;
+
+  /** Build the drill props once (medicine ball, cones, band, wall, line, target). */
+  setDrillProps(list: { kind: string; at?: Vec3; size?: number; yaw?: number }[]) {
+    this.props.clear();
+    if (!this.props.parent) this.scene.add(this.props);
+    const med = new THREE.Mesh(new THREE.SphereGeometry(0.115, 40, 24), new THREE.MeshPhysicalMaterial({ color: '#c0392b', roughness: 0.55, clearcoat: 0.4, clearcoatRoughness: 0.5 }));
+    const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.116, 0.012, 8, 48), new THREE.MeshStandardMaterial({ color: '#1b1e24', roughness: 0.5 }));
+    med.add(stripe);
+    med.castShadow = true;
+    med.visible = false;
+    this.props.add(med);
+    const cones: THREE.Object3D[] = [];
+    for (const p of list) {
+      if (!p.at) continue;
+      const at = v3(p.at);
+      if (p.kind === 'cone') {
+        const c = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.22, 24).translate(0, 0.11, 0), new THREE.MeshStandardMaterial({ color: '#ff7a1a', roughness: 0.45, emissive: '#ff5a00', emissiveIntensity: 0.15 }));
+        c.position.copy(at).setY(0);
+        c.castShadow = true;
+        this.props.add(c);
+        cones.push(c);
+      } else if (p.kind === 'target') {
+        const m = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.5, 48), new THREE.MeshStandardMaterial({ color: '#f5b544', emissive: '#f5b544', emissiveIntensity: 0.4, side: THREE.DoubleSide }));
+        m.rotation.x = -Math.PI / 2;
+        m.position.copy(at).setY(0.006);
+        this.props.add(m);
+      } else if (p.kind === 'line') {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(0.05, p.size ?? 2), new THREE.MeshStandardMaterial({ color: '#f5b544', emissive: '#f5b544', emissiveIntensity: 0.5 }));
+        m.rotation.x = -Math.PI / 2;
+        m.rotation.z = THREE.MathUtils.degToRad(p.yaw ?? 90);
+        m.position.copy(at).setY(0.007);
+        this.props.add(m);
+      } else if (p.kind === 'wall') {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(p.size ?? 4, 2.6, 0.12), new THREE.MeshStandardMaterial({ color: '#2b3550', roughness: 0.9 }));
+        m.position.copy(at).setY(1.3);
+        m.rotation.y = THREE.MathUtils.degToRad(p.yaw ?? 0);
+        m.receiveShadow = true;
+        m.castShadow = true;
+        this.props.add(m);
+      } else if (p.kind === 'chair') {
+        const mat = new THREE.MeshStandardMaterial({ color: '#3b4252', roughness: 0.6 });
+        const g = new THREE.Group();
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.05, 0.45), mat);
+        seat.position.y = 0.46;
+        g.add(seat);
+        for (const [x, z] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) {
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.46, 8), mat);
+          leg.position.set(x, 0.23, z);
+          g.add(leg);
+        }
+        g.position.copy(at).setY(0);
+        g.traverse((o) => { (o as THREE.Mesh).castShadow = true; });
+        this.props.add(g);
+      }
+    }
+    this.propMeshes = { med, band: null, cones };
+  }
+
+  /**
+   * Draw one frame of a drill: the figure on given landmarks (court space), the racket in its hand,
+   * the ball, a medicine ball or band, and the hand or racket path so far. The camera circles the
+   * player at `yaw` degrees (0 = behind, looking at the net; 90 = from the player's right).
+   */
+  renderDrill(d: {
+    pts: Vec3[]; hand: Handedness; racket: { dir: Vec3; face: Vec3 } | null; ball: Vec3 | null; medball: Vec3 | null;
+    band?: { from: Vec3; hands: 'l' | 'r' | 'both' } | null; trail?: Vec3[]; camera: { yaw: number; height?: number; dist?: number; target?: Vec3 };
+  }) {
+    this.courtGroup.visible = true;
+    this.renderPass.camera = this.camera;
+    this.scene.fog = this.fog;
+    this.figure = this.rigged.loaded ? this.rigged : this.mannequin;
+    this.athlete.group.visible = this.mannequin.group.visible = this.rigged.group.visible = false;
+    this.figure.group.visible = true;
+    for (const o of [this.path, this.trail, this.eyeLine]) if (o) o.visible = false;
+    this.ringMeshes.forEach((m) => (m.visible = false));
+    this.glow.visible = false;
+    this.footGlow.forEach((g) => (g.visible = false));
+    this.current = null;
+    const P = (i: number) => v3(d.pts[i]);
+    const side = d.hand === 'left' ? 'l' : 'r';
+    const grip = d.racket ? { dir: v3(d.racket.dir).normalize(), face: v3(d.racket.face).normalize() } : null;
+    this.figure.group.position.y = 0;
+    this.figure.update(P, side, grip);
+    const rig = this.figure === this.rigged ? this.rigged : null;
+    this.figure.group.updateMatrixWorld(true);
+    const handOf = (s: 'l' | 'r') => rig?.hand(s) ?? P(s === 'l' ? 15 : 16);
+
+    // Racket in the model's hand.
+    this.racket.visible = !!grip;
+    this.racket.position.set(0, 0, 0);
+    if (grip) {
+      const g0 = handOf(side).addScaledVector(grip.dir, 0.05);
+      const head = g0.clone().addScaledVector(grip.dir, 0.68 * 0.72);
+      const tip = g0.clone().addScaledVector(grip.dir, 0.68);
+      place(this.racket.getObjectByName('shaft')!, g0, g0.clone().lerp(tip, 0.5));
+      const across = new THREE.Vector3().crossVectors(grip.face!, grip.dir).normalize();
+      const basis = new THREE.Matrix4().makeBasis(across, grip.dir, grip.face!);
+      for (const name of ['frame', 'strings']) {
+        const m = this.racket.getObjectByName(name) as THREE.Mesh;
+        m.position.copy(head);
+        m.quaternion.setFromRotationMatrix(basis);
+        m.scale.set(0.125, 0.165, name === 'frame' ? 0.15 : 1);
+      }
+    }
+
+    // Ball.
+    this.ball.visible = !!d.ball;
+    if (d.ball) this.ball.position.copy(v3(d.ball));
+    // The ball's glow only in flight: next to the body it would light up the shell.
+    this.ballLight.visible = !!d.ball && Math.min(...[0, 11, 12, 15, 16, 23, 24].map((i) => P(i).distanceTo(this.ball.position))) > 0.45;
+    this.ballLight.position.copy(this.ball.position);
+
+    // Medicine ball between the model's hands while held.
+    if (this.propMeshes) {
+      const m = this.propMeshes.med;
+      m.visible = !!d.medball;
+      if (d.medball) {
+        const held = d.medball;
+        const mid = handOf('l').add(handOf('r')).multiplyScalar(0.5);
+        const tracked = P(15).add(P(16)).multiplyScalar(0.5);
+        // Follow the model's hands, not the landmark wrists, while it is in them.
+        const p = v3(held);
+        if (p.distanceTo(tracked) < 0.25) p.add(mid.sub(tracked));
+        m.position.copy(p);
+      }
+      if (this.propMeshes.band) { this.props.remove(this.propMeshes.band); this.propMeshes.band.geometry.dispose(); this.propMeshes.band = null; }
+      if (d.band) {
+        const to = d.band.hands === 'both' ? handOf('l').add(handOf('r')).multiplyScalar(0.5) : handOf(d.band.hands);
+        const band = tube([v3(d.band.from), v3(d.band.from).lerp(to, 0.5).add(new THREE.Vector3(0, -0.02, 0)), to], 0.012, new THREE.Color(0.35, 1.1, 0.75));
+        this.props.add(band);
+        this.propMeshes.band = band;
+      }
+    }
+
+    // Path of the hand or racket so far.
+    if (this.drillTrail) { this.scene.remove(this.drillTrail); this.drillTrail.geometry.dispose(); this.drillTrail = null; }
+    if (d.trail && d.trail.length > 3) {
+      this.drillTrail = tube(d.trail.map(v3), 0.011, SWING);
+      this.scene.add(this.drillTrail);
+    }
+
+    // Camera on a circle around the player.
+    const hips = P(23).add(P(24)).multiplyScalar(0.5);
+    const target = d.camera.target ? v3(d.camera.target) : new THREE.Vector3(hips.x, 0.95, hips.z);
+    const yaw = THREE.MathUtils.degToRad(d.camera.yaw);
+    const dist = d.camera.dist ?? 4.4;
+    const back = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    this.camera.up.set(0, 1, 0);
+    this.camera.position.copy(target).addScaledVector(back, dist).setY(d.camera.height ?? 1.55);
+    this.camera.lookAt(target);
+
+    const chest = P(11).add(P(12)).add(P(23)).add(P(24)).multiplyScalar(0.25);
+    const look = chest.clone().sub(this.camera.position).setY(0).normalize();
+    const right = new THREE.Vector3().crossVectors(look, UP).normalize();
+    const floorAt = new THREE.Vector3(chest.x, 0, chest.z);
+    this.aimSpot(floorAt.clone().addScaledVector(right, 2.6).addScaledVector(look, 2.2).setY(8.5), floorAt.clone().addScaledVector(look, 0.2), true);
+    this.fill.position.copy(this.camera.position).add(new THREE.Vector3(0, 2, 0));
+    this.fill.target.position.copy(chest);
+    (this.scene.getObjectByName('rim') as THREE.DirectionalLight).position.copy(chest).addScaledVector(look, 4).addScaledVector(right, -2).setY(4);
+    (this.scene.getObjectByName('under') as THREE.PointLight).position.set(chest.x, 0.3, chest.z + 0.4);
+
+    this.gtao.enabled = true;
+    this.gtao.camera = this.camera;
+    this.bokeh.enabled = true;
+    this.bokeh.camera = this.camera;
+    const u = this.bokeh.uniforms as Record<string, THREE.IUniform>;
+    u.focus.value = this.camera.position.distanceTo(chest);
+    u.nearClip.value = this.camera.near;
+    u.farClip.value = this.camera.far;
+    u.aspect.value = this.camera.aspect;
+    this.composer.render();
+  }
+
+  /** Model hand positions of the last drill frame (for trails that follow the drawn hand). */
+  drillHand(side: 'l' | 'r') {
+    return this.rigged.loaded ? this.rigged.hand(side) : null;
   }
 
   dispose() {

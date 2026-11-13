@@ -12,6 +12,7 @@ import { drawCourtOverlay, fromCanvas } from '../render/court';
 import { CourtPanel } from './CourtPanel';
 import { SetupBadge } from './FilmingGuide';
 import { ContactReading, FocusCard, PowerSequence } from './Insights';
+import { topicFor } from '../drills/catalog';
 import { drawCallouts, drawSkeleton, drawTrail, drawVideo, fullCrop, type LabelBox, type View } from '../render/overlay';
 import { FrameGrabber } from '../render/grabber';
 import { canExportVideo, exportCarousel, exportPdf, exportVideo, renderCard, type CardContext } from '../render/export';
@@ -578,6 +579,15 @@ export function SessionView({ id }: { id: string }) {
                             </div>
                           </div>
                         ) : <p>{k.text}</p>}
+                        {k.status === 'fix' && (() => {
+                          const tp = topicFor(k.ruleId, k.metric, stroke.type);
+                          return tp ? (
+                            <button className="drills-btn" title={`On-court and off-court drills for "${tp.title}"`}
+                              onClick={() => { videoRef.current?.pause(); go({ name: 'drills', topic: tp.id, stroke: stroke.type, hand: player.hand, back: { name: 'session', id } }); }}>
+                              Drills
+                            </button>
+                          ) : null;
+                        })()}
                         {k.metric && k.value !== undefined && (
                           <small>
                             {METRIC_INFO[k.metric].label} {formatMetric(k.metric, k.value)}
