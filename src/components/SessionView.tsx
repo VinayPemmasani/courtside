@@ -16,7 +16,7 @@ import { topicFor } from '../drills/catalog';
 import { ProComparePanel } from './ProCompare';
 import { StrikePanel } from './StrikeLab';
 import { readStrokeBall } from '../render/balltrack';
-import { strikeApplies } from '../core';
+import { applyRules, strikeApplies, strokeStage } from '../core';
 import { loadProRefs } from '../storage/pros';
 import { drawBallTrack, drawCallouts, drawProSkeleton, drawSkeleton, drawTrail, drawVideo, fullCrop, type LabelBox, type View } from '../render/overlay';
 import { FrameGrabber } from '../render/grabber';
@@ -218,13 +218,27 @@ export function SessionView({ id }: { id: string }) {
       setBallBusy(null);
       setSession((cur) => {
         if (!cur) return cur;
-        const next = { ...cur, strokes: cur.strokes.map((s) => { const r = results.get(s.id); return r && r.contact === s.contactFrame ? { ...s, ballRead: r } : s; }) };
+        const next = { ...cur, strokes: cur.strokes.map((s) => { const r = results.get(s.id); if (!r || r.contact !== s.contactFrame) return s; const n = { ...s, ballRead: r }; return { ...n, ...applyRules(n, rules, player.hand) }; }) };
         store.saveSession(next);
         return next;
       });
     })();
     return () => { ballRun.current++; setBallBusy(null); };
-  }, [session?.strokes, prepared, player, url]);
+  }, [session?.strokes, prepared, player, url, rules]);
+  // Strokes with a known ball timing get their body-position targets for that timing (also
+  // upgrades sessions read before the targets depended on it).
+  useEffect(() => {
+    if (!session || !player) return;
+    let changed = false;
+    const strokes = session.strokes.map((s) => {
+      if (!strokeStage(s) || s.keyPoints.some((k) => k.stage)) return s;
+      const next = { ...s, ...applyRules(s, rules, player.hand) };
+      if (!next.keyPoints.some((k) => k.stage)) return s;
+      changed = true;
+      return next;
+    });
+    if (changed) save({ ...session, strokes });
+  }, [session?.strokes, player, rules]);
   useEffect(() => { if (studio) loadStudioFonts().then(() => draw()); }, [studio, draw]);
   useEffect(() => () => studioScene.current?.dispose(), []);
 
@@ -624,7 +638,7 @@ export function SessionView({ id }: { id: string }) {
                 );
               })()}
               {strikeMode && (
-                <StrikePanel session={session} prepared={prepared} stroke={stroke} hand={player.hand} busy={ballBusy} onStroke={(st) => updateStroke(st)}
+                <StrikePanel session={session} prepared={prepared} stroke={stroke} hand={player.hand} busy={ballBusy} onStroke={(st) => updateStroke({ ...st, ...applyRules(st, rules, player.hand) })}
                   onSelect={(sid, f) => { setStrokeId(sid); seekFrame(f); }} />
               )}
               <FocusCard stroke={stroke} />
@@ -669,7 +683,7 @@ export function SessionView({ id }: { id: string }) {
                         {k.metric && k.value !== undefined && (
                           <small>
                             {METRIC_INFO[k.metric].label} {formatMetric(k.metric, k.value)}
-                            {(k.min !== undefined || k.max !== undefined) && ` · target ${k.min !== undefined ? formatMetric(k.metric, k.min) : ''}${k.min !== undefined && k.max !== undefined ? '–' : k.min !== undefined ? '+' : 'up to '}${k.max !== undefined ? formatMetric(k.metric, k.max) : ''}`}
+                            {(k.min !== undefined || k.max !== undefined) && ` · target ${k.min !== undefined ? formatMetric(k.metric, k.min) : ''}${k.min !== undefined && k.max !== undefined ? '–' : k.min !== undefined ? '+' : 'up to '}${k.max !== undefined ? formatMetric(k.metric, k.max) : ''}${k.stage ? ` (${k.stage} ball)` : ''}`}
                           </small>
                         )}
                         {phaseOf(k.phaseId) && <div className="kp-at">{stamp(phaseOf(k.phaseId)!, `at ${phaseOf(k.phaseId)!.label}`)}</div>}

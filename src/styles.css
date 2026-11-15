@@ -578,3 +578,10 @@ canvas.placing { cursor: crosshair; }
 .strike-table td.stage-peak { color: #d7ff3a; }
 .strike-table td.stage-falling { color: #ffb36b; }
 .strike-table { overflow-x: auto; }
+.strike-body { margin: 12px 0; }
+.strike-body .label { margin-bottom: 6px; }
+.stage-body { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; font-size: 13px; line-height: 1.4; }
+.stage-body li b { display: block; }
+.stage-body li span { display: block; }
+.stage-body li small { display: block; opacity: 0.7; }
+.stage-body li small.changed { opacity: 1; color: var(--accent, #d7ff3a); }

@@ -145,7 +145,9 @@ export const store = {
     if (!saved) return DEFAULT_RULES;
     // New default rules appear automatically; saved edits win for existing ids.
     const byId = new Map(saved.map((r) => [r.id, r]));
-    return [...DEFAULT_RULES.map((r) => byId.get(r.id) ?? r), ...saved.filter((r) => !DEFAULT_RULES.some((d) => d.id === r.id))];
+    // Ball-timing targets come from the defaults unless a coach saved their own.
+    const merge = (d: Rule) => { const v = byId.get(d.id); return v ? { ...v, byStage: v.byStage ?? d.byStage } : d; };
+    return [...DEFAULT_RULES.map(merge), ...saved.filter((r) => !DEFAULT_RULES.some((d) => d.id === r.id))];
   },
   async saveRules(rules: Rule[]) {
     const at = Date.now();

@@ -93,6 +93,8 @@ export interface KeyPoint {
   max?: number;
   /** Set once a coach edits or adds the key point; re-evaluation keeps it. */
   edited?: boolean;
+  /** The target was adjusted for this ball timing. */
+  stage?: BounceStage;
 }
 
 export interface Callout {
@@ -151,4 +153,17 @@ export interface Rule {
   goodLabel: string;
   fixLabel: string;
   enabled: boolean;
+  /**
+   * Different targets (and words) when the ball is taken rising, at the peak or falling. The stage
+   * comes from the ball's flight in the video, or the coach's setting in the Strike lab.
+   */
+  byStage?: Partial<Record<BounceStage, StageTarget>>;
+}
+
+export interface StageTarget {
+  min?: number;
+  max?: number;
+  good?: string;
+  fixLow?: string;
+  fixHigh?: string;
 }
