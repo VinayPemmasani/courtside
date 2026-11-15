@@ -108,6 +108,9 @@ export interface Callout {
   edited?: boolean;
 }
 
+/** Where the ball is in its bounce at contact. */
+export type BounceStage = 'rising' | 'peak' | 'falling';
+
 export interface Stroke {
   id: string;
   type: StrokeType;
@@ -124,6 +127,8 @@ export interface Stroke {
   note?: string;
   /** True when the type was set by hand, so re-analysis keeps it. */
   typeLocked?: boolean;
+  /** Bounce stage at contact, set by the player in the Strike lab (otherwise estimated). */
+  strikeStage?: BounceStage;
 }
 
 export interface Rule {

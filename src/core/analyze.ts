@@ -46,6 +46,7 @@ export function buildStroke(p: Prepared, win: StrokeWindow, rules: Rule[], force
     callouts: base?.callouts ?? [],
     note: base?.note,
     typeLocked: base?.typeLocked,
+    strikeStage: base?.strikeStage,
   };
   return remeasure(p, stroke, rules);
 }

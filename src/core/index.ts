@@ -16,3 +16,4 @@ export * from './setup';
 export * from './biomech';
 export * from './diagnose';
 export * from './procompare';
+export * from './strike';

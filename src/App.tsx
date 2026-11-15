@@ -9,6 +9,7 @@ import { CompareView } from './components/CompareView';
 import { TrendsView } from './components/TrendsView';
 import { RulesView } from './components/RulesView';
 import { DrillsView } from './components/DrillsView';
+import { StrikeStudy } from './components/StrikeLab';
 import type { Handedness, StrokeType } from './core';
 
 export type Route =
@@ -18,6 +19,7 @@ export type Route =
   | { name: 'compare'; playerId: string; strokeId?: string }
   | { name: 'trends'; playerId: string }
   | { name: 'rules' }
+  | { name: 'strike' }
   | { name: 'drills'; topic?: string; stroke?: StrokeType; hand?: Handedness; back?: Route };
 
 interface AppCtx {
@@ -28,7 +30,7 @@ interface AppCtx {
 }
 
 const VIEW_LABEL: Record<Route['name'], string> = {
-  library: 'Library', import: 'Import', session: 'Session', compare: 'Compare', trends: 'Progress', rules: 'Coach', drills: 'Drills',
+  library: 'Library', import: 'Import', session: 'Session', compare: 'Compare', trends: 'Progress', rules: 'Coach', drills: 'Drills', strike: 'Strike lab',
 };
 
 const Ctx = createContext<AppCtx>(null!);
@@ -64,8 +66,9 @@ export function App() {
             <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" /> COURTSIDE <em>/ STROKE TELEMETRY</em>
           </button>
           <nav>
-            <button className={route.name !== 'rules' && route.name !== 'drills' ? 'active' : ''} onClick={() => setRoute({ name: 'library' })}>Players</button>
+            <button className={route.name !== 'rules' && route.name !== 'drills' && route.name !== 'strike' ? 'active' : ''} onClick={() => setRoute({ name: 'library' })}>Players</button>
             <button className={route.name === 'drills' ? 'active' : ''} onClick={() => setRoute({ name: 'drills' })}>Drills</button>
+            <button className={route.name === 'strike' ? 'active' : ''} onClick={() => setRoute({ name: 'strike' })}>Strike lab</button>
             <button className={route.name === 'rules' ? 'active' : ''} onClick={() => setRoute({ name: 'rules' })}>Coach settings</button>
           </nav>
           <div className="telemetry" aria-hidden="true">
@@ -83,6 +86,7 @@ export function App() {
           {route.name === 'compare' && <CompareView playerId={route.playerId} strokeId={route.strokeId} />}
           {route.name === 'trends' && <TrendsView playerId={route.playerId} />}
           {route.name === 'rules' && <RulesView />}
+          {route.name === 'strike' && <StrikeStudy />}
           {route.name === 'drills' && <DrillsView key={`${route.topic}/${route.stroke}`} topic={route.topic} stroke={route.stroke} hand={route.hand} back={route.back} />}
         </main>
       </div>

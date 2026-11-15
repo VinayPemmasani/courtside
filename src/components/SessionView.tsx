@@ -14,6 +14,7 @@ import { SetupBadge } from './FilmingGuide';
 import { ContactReading, FocusCard, PowerSequence } from './Insights';
 import { topicFor } from '../drills/catalog';
 import { ProComparePanel } from './ProCompare';
+import { StrikePanel } from './StrikeLab';
 import { loadProRefs } from '../storage/pros';
 import { drawCallouts, drawProSkeleton, drawSkeleton, drawTrail, drawVideo, fullCrop, type LabelBox, type View } from '../render/overlay';
 import { FrameGrabber } from '../render/grabber';
@@ -51,6 +52,7 @@ export function SessionView({ id }: { id: string }) {
   const [figure, setFigure] = useState<'mannequin' | 'athlete'>('mannequin');
   const [placement, setPlacement] = useState(false);
   const [proMode, setProMode] = useState(false);
+  const [strikeMode, setStrikeMode] = useState(false);
   const [proRefs, setProRefs] = useState<ProRef[] | null>(null);
   const [proKey, setProKey] = useState<string>();
   const [corners, setCorners] = useState<Vec2[] | null>(null);
@@ -406,8 +408,9 @@ export function SessionView({ id }: { id: string }) {
         </select>
         {setup && <SetupBadge report={setup} />}
         <div className="spacer" />
-        <label className="toggle" title="Tap the court corners once, then tap each bounce for line calls, depth and speed"><input type="checkbox" checked={placement} onChange={(e) => { setPlacement(e.target.checked); if (e.target.checked) { setStudio(false); setProMode(false); } else setCorners(null); }} /> Shot placement</label>
+        <label className="toggle" title="Tap the court corners once, then tap each bounce for line calls, depth and speed"><input type="checkbox" checked={placement} onChange={(e) => { setPlacement(e.target.checked); if (e.target.checked) { setStudio(false); setProMode(false); setStrikeMode(false); } else setCorners(null); }} /> Shot placement</label>
         <label className="toggle" title="3D mannequin under an arena spotlight, with racket path, eye line, ball flight and weight transfer"><input type="checkbox" checked={studio} onChange={(e) => { setStudio(e.target.checked); if (e.target.checked) { setPlacement(false); setCorners(null); setProMode(false); } }} /> Studio look</label>
+        <label className="toggle" title="Study how squarely and how hard each groundstroke meets the ball: face for the bounce, drive vs lift for the height, trunk brake, extension"><input type="checkbox" checked={strikeMode} onChange={(e) => { setStrikeMode(e.target.checked); if (e.target.checked) { setPlacement(false); setCorners(null); } }} /> Strike lab</label>
         <label className="toggle" title="Overlay the closest pro stroke from your Pro reference players and show the differences"><input type="checkbox" checked={proMode} onChange={(e) => { setProMode(e.target.checked); if (e.target.checked) { setStudio(false); setPlacement(false); setCorners(null); setProRefs(null); } }} /> Pro compare</label>
         {studio && (
           <div className="seg" title="Where the 3D camera stands">
@@ -585,6 +588,10 @@ export function SessionView({ id }: { id: string }) {
                     onSelect={setProKey} userWorld={uw && o ? uw : null} proWorld={o?.world ?? null} loading={!proRefs} />
                 );
               })()}
+              {strikeMode && (
+                <StrikePanel session={session} prepared={prepared} stroke={stroke} hand={player.hand} onStroke={(st) => updateStroke(st)}
+                  onSelect={(sid, f) => { setStrokeId(sid); seekFrame(f); }} />
+              )}
               <FocusCard stroke={stroke} />
               <ContactReading stroke={stroke} rules={rules} hand={player.hand} />
               <PowerSequence prepared={prepared} stroke={stroke} frame={frame} onSeek={seekFrame} />
