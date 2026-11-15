@@ -1,4 +1,5 @@
 /** Shared data types for the analysis core. Pure data, no DOM. */
+import type { BallReading } from './ball';
 
 export interface Vec2 {
   x: number;
@@ -129,6 +130,8 @@ export interface Stroke {
   typeLocked?: boolean;
   /** Bounce stage at contact, set by the player in the Strike lab (otherwise estimated). */
   strikeStage?: BounceStage;
+  /** Ball flight read from the video around this contact (null = looked, ball not found). */
+  ballRead?: { contact: number; reading: BallReading | null };
 }
 
 export interface Rule {

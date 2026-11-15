@@ -84,8 +84,19 @@ function Legend() {
   );
 }
 
+const ms = (sec: number) => `${Math.round(Math.abs(sec) * 1000)} ms`;
+/** How the ball's flight gave the stage, in words. */
+function ballWords(b: NonNullable<Strike['ball']>): string {
+  if (!b.bounceSeen) return `from the ball's last frames (bounce out of view): ball ${b.stage === 'rising' ? 'still climbing' : b.stage === 'peak' ? 'level' : 'dropping'} at contact`;
+  const top = b.sinceApex !== undefined ? (Math.abs(b.sinceApex) < 0.03 ? ', right at the top' : `, ${ms(b.sinceApex)} ${b.sinceApex < 0 ? 'before' : 'after'} the top`) : '';
+  return `from the ball's flight: bounced ${b.dt!.toFixed(2)} s before contact${top}`;
+}
+const kmh = (v: number) => Math.round(v * 3.6);
+const STAGE_SHORT = { rising: 'rising', peak: 'peak', falling: 'falling' } as const;
+
 const SOURCE_WORD = (s: Strike) =>
   s.stageSource === 'set' ? 'set by you'
+    : s.stageSource === 'ball' && s.ball ? ballWords(s.ball)
     : s.stageSource === 'court' ? `from court position, ${Math.abs(s.behindBaseline!).toFixed(1)} m ${s.behindBaseline! >= 0 ? 'behind' : 'inside'} the baseline`
       : 'assumed (most club forehands are hit on the drop). Set it if you know.';
 
@@ -96,14 +107,16 @@ interface PanelProps {
   hand: Handedness;
   onStroke: (s: Stroke) => void;
   onSelect: (id: string, frame: number) => void;
+  /** Progress text while the ball is being read from the video. */
+  busy?: string | null;
 }
 
 /** Per-stroke strike reading, plus a table of every groundstroke in the session. */
-export function StrikePanel({ session, prepared, stroke, hand, onStroke, onSelect }: PanelProps) {
+export function StrikePanel({ session, prepared, stroke, hand, onStroke, onSelect, busy }: PanelProps) {
   const { go } = useApp();
   const map = useMemo(() => (session.court ? courtMap(session.court) : null), [session.court]);
   const read = (s: Stroke) =>
-    analyseStrike({ frames: prepared.frames, stroke: s, hand, fps: prepared.fps, yaw: prepared.yaw, hipYaw: prepared.hipYaw ?? [], court: map, stage: s.strikeStage });
+    analyseStrike({ frames: prepared.frames, stroke: s, hand, fps: prepared.fps, yaw: prepared.yaw, hipYaw: prepared.hipYaw ?? [], court: map, stage: s.strikeStage, ball: s.ballRead?.reading });
   const strike = useMemo(() => read(stroke), [stroke, prepared, map]);
   const all = useMemo(
     () => session.strokes.filter(strikeApplies).map((s) => ({ s, r: read(s)! })).filter((x) => x.r),
@@ -137,6 +150,7 @@ export function StrikePanel({ session, prepared, stroke, hand, onStroke, onSelec
             ))}
           </div>
           <span className="muted small">{SOURCE_WORD(strike)}</span>
+          {busy && <span className="muted small ball-busy">{busy}</span>}
         </div>
 
         <StrikeDiagram stage={strike.stage} height={strike.ballHeight} face={strike.face} path={strike.path} compact />
@@ -151,6 +165,21 @@ export function StrikePanel({ session, prepared, stroke, hand, onStroke, onSelec
           {strike.extension !== undefined && <><dt>Extension</dt><dd>{strike.extension.toFixed(2)} m</dd></>}
         </dl>
 
+        {strike.shot && (
+          <div className="strike-impact">
+            <div className="label">What it did to the ball <i>|</i> <b className="v">model</b></div>
+            <dl className="strike-nums">
+              <dt>Off the strings</dt><dd className="a">{kmh(strike.shot.speed)} km/h <small>racket ~{kmh(strike.racketSpeed!)} km/h, ball in {kmh(strike.speedIn!)} km/h{strike.speedInMeasured ? '' : ' (assumed)'}</small></dd>
+              <dt>Launch</dt><dd>{strike.shot.launch >= 0 ? '+' : ''}{strike.shot.launch.toFixed(1)}°</dd>
+              <dt>Spin</dt><dd>{Math.round(Math.abs(strike.shot.rpm))} rpm {strike.shot.rpm >= 0 ? 'topspin' : 'backspin'}</dd>
+              <dt>Into the ball</dt><dd>{Math.round(strike.shot.square)}% <small>of the strike goes straight through it</small></dd>
+              {strike.atPeak && strike.stage !== 'peak' && <><dt>At the top</dt><dd>{kmh(strike.atPeak.speed)} km/h, {strike.atPeak.launch >= 0 ? '+' : ''}{strike.atPeak.launch.toFixed(1)}°, {Math.round(Math.abs(strike.atPeak.rpm))} rpm</dd></>}
+            </dl>
+            <ul className="impact-list">{strike.impact.map((t, i) => <li key={i}>{t}</li>)}</ul>
+            <p className="muted small">Estimated with a physics model (ball meeting the strings, then flight with drag and spin). Racket speed comes from the wrist, {strike.faceAssumed ? 'the face could not be read so it is taken as vertical, ' : ''}so compare strokes with each other rather than trusting one number.</p>
+          </div>
+        )}
+
         <ul className="strike-checks">
           {strike.checks.map((c) => (
             <li key={c.id} className={c.ok ? 'ok' : 'no'}>
@@ -162,7 +191,7 @@ export function StrikePanel({ session, prepared, stroke, hand, onStroke, onSelec
         </ul>
         {strike.faceNote && <p className="muted small">{strike.faceNote}</p>}
         {strike.lowTracking && <p className="muted small">Tracking of the hitting arm at contact: {Math.round(strike.tracking * 100)}%. The score is left out below 50%.</p>}
-        <p className="muted small">Readings come from the pose: the face is estimated from the palm and the ball is not tracked, so treat single numbers as a guide and look at the pattern across strokes.</p>
+        <p className="muted small">Readings come from the pose: the face is estimated from the palm and the ball is tracked by its colour, so treat single numbers as a guide and look at the pattern across strokes.</p>
         <button className="link" onClick={() => go({ name: 'strike' })}>Study how the strike works →</button>
       </div>
 
@@ -170,18 +199,20 @@ export function StrikePanel({ session, prepared, stroke, hand, onStroke, onSelec
         <div className="insight strike-table">
           <div className="label">Every groundstroke <i>|</i> <b className="a">{sum.avgScore !== undefined ? `avg ${sum.avgScore}/100` : `${sum.n} strokes`}</b></div>
           <table>
-            <thead><tr><th>#</th><th>Time</th><th>Ball</th><th>Height</th><th>Path</th><th>Drive</th><th>Brake</th><th>Ext.</th><th>Score</th></tr></thead>
+            <thead><tr><th>#</th><th>Time</th><th>Ball</th><th>vs top</th><th>Height</th><th>Path</th><th>Face</th><th>Off strings</th><th>Spin</th><th>Drive</th><th>Score</th></tr></thead>
             <tbody>
               {all.map(({ s, r }) => (
                 <tr key={s.id} className={s.id === stroke.id ? 'on' : ''} onClick={() => onSelect(s.id, s.contactFrame)}>
                   <td>{session.strokes.indexOf(s) + 1}</td>
                   <td>{fmtTime(session.start + s.contactFrame / session.fps)}</td>
-                  <td>{r.stage}{r.stageSource === 'assumed' ? '?' : ''}</td>
+                  <td className={`stage-${r.stage}`}>{STAGE_SHORT[r.stage]}{r.stageSource === 'assumed' ? '?' : r.stageSource === 'court' ? '*' : ''}</td>
+                  <td>{r.ball?.sinceApex !== undefined ? `${r.ball.sinceApex < 0 ? '−' : '+'}${Math.round(Math.abs(r.ball.sinceApex) * 1000)} ms` : '—'}</td>
                   <td>{r.ballHeight !== undefined ? r.ballHeight.toFixed(2) : '—'}</td>
                   <td>{r.path !== undefined ? `${Math.round(r.path)}°` : '—'}</td>
+                  <td>{r.face !== undefined ? fmtFace(r.face) : '—'}</td>
+                  <td>{r.shot ? `${kmh(r.shot.speed)} km/h` : '—'}</td>
+                  <td>{r.shot ? `${Math.round(r.shot.rpm)}` : '—'}</td>
                   <td className={r.checks.find((c) => c.id === 'drive')?.ok === false ? 'r' : ''}>{r.drive !== undefined ? `${Math.round(r.drive)}%` : '—'}</td>
-                  <td className={r.checks.find((c) => c.id === 'brake')?.ok === false ? 'r' : ''}>{r.brake !== undefined ? `${Math.round(r.brake)}%` : '—'}</td>
-                  <td className={r.checks.find((c) => c.id === 'extension')?.ok === false ? 'r' : ''}>{r.extension !== undefined ? r.extension.toFixed(2) : '—'}</td>
                   <td>{r.score ?? '—'}{r.brushing ? ' ⚠' : ''}</td>
                 </tr>
               ))}
@@ -189,7 +220,7 @@ export function StrikePanel({ session, prepared, stroke, hand, onStroke, onSelec
           </table>
           <p className="muted small">
             {sum.worst ? `Most common miss: ${({ face: 'face not square to the ball', drive: 'wrong drive/lift split for the height', brake: 'trunk still turning at contact', extension: 'short extension through the ball', brush: 'brushing up the back of the ball' } as const)[sum.worst]}. ` : ''}
-            {sum.brushing ? `${sum.brushing} brushed (⚠). ` : ''}? = bounce stage assumed. Click a row to study that stroke.
+            {sum.brushing ? `${sum.brushing} brushed (⚠). ` : ''}Ball stage comes from tracking the ball; * = from court position, ? = assumed. "vs top" is time before (−) or after (+) the top of the bounce. Off strings and spin are model estimates. Click a row to study that stroke.
           </p>
         </div>
       )}

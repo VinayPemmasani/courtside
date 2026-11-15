@@ -477,3 +477,30 @@ export function drawProSkeleton(v: View, pro: ImagePoint[], user: ImagePoint[] |
   }
   ctx.restore();
 }
+
+/** The ball's tracked flight up to this frame, with the bounce ringed. */
+export function drawBallTrack(v: View, r: { track: { f: number; x: number; y: number }[]; bounceFrame?: number }, upTo: number) {
+  const pts = r.track.filter((p) => p.f <= upTo && p.f >= upTo - 45);
+  if (!pts.length) return;
+  const { ctx } = v;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(216, 242, 90, 0.85)';
+  ctx.fillStyle = '#d8f25a';
+  ctx.lineWidth = Math.max(1.5, v.W / 500);
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  pts.forEach((p, k) => { const q = toCanvas(v, p); if (k) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y); });
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const last = toCanvas(v, pts[pts.length - 1]);
+  ctx.beginPath(); ctx.arc(last.x, last.y, Math.max(3, v.W / 220), 0, Math.PI * 2); ctx.fill();
+  if (r.bounceFrame !== undefined && r.bounceFrame <= upTo) {
+    const b = r.track.reduce((a, p) => (Math.abs(p.f - r.bounceFrame!) < Math.abs(a.f - r.bounceFrame!) ? p : a), r.track[0]);
+    const q = toCanvas(v, b);
+    ctx.lineWidth = Math.max(2, v.W / 400);
+    ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(8, v.W / 70), 0, Math.PI * 2); ctx.stroke();
+    ctx.font = `600 ${Math.max(11, Math.round(v.W / 55))}px system-ui, sans-serif`;
+    ctx.fillText('BOUNCE', q.x + Math.max(10, v.W / 60), q.y + 4);
+  }
+  ctx.restore();
+}

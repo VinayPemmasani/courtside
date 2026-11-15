@@ -18,6 +18,8 @@ import { mid, sub } from './geometry';
 import { faceTiltAt } from './biomech';
 import { smoothSeries } from './smoothing';
 import { feetPoint, type CourtMap } from './court';
+import type { BallReading } from './ball';
+import { HEAD_TO_WRIST, simulate, type Shot } from './flight';
 
 import type { BounceStage } from './types';
 export type { BounceStage };
@@ -66,9 +68,9 @@ export const MIN_TRACKING = 0.5;
 /** The three face readings around contact must agree within this, degrees. */
 export const FACE_SPREAD_MAX = 15;
 /** A groundstroke face beyond this tilt is a tracking error, not a real face angle. */
-export const FACE_PLAUSIBLE = 35;
+export const FACE_PLAUSIBLE = 20;
 
-export type StageSource = 'set' | 'court' | 'assumed';
+export type StageSource = 'set' | 'ball' | 'court' | 'assumed';
 
 export interface StrikeCheck {
   id: 'face' | 'drive' | 'brake' | 'extension' | 'brush';
@@ -114,6 +116,21 @@ export interface Strike {
   checks: StrikeCheck[];
   /** The one change to try first. */
   headline: string;
+  /** Ball flight read from the video, when found. */
+  ball?: BallReading;
+  /** Racket head speed used for the model (from the wrist speed), m/s. */
+  racketSpeed?: number;
+  /** Incoming ball speed used for the model, m/s, and whether it was measured. */
+  speedIn?: number;
+  speedInMeasured?: boolean;
+  /** True when the face could not be read and the model assumed a vertical face. */
+  faceAssumed?: boolean;
+  /** What this strike did to the ball (model), and the same swing in two other cases. */
+  shot?: Shot;
+  atPeak?: Shot;
+  faceSquare?: Shot;
+  /** Plain sentences on how the bounce stage, face and path shaped power and the ball's path. */
+  impact: string[];
 }
 
 const GROUND_POINTS = [27, 28, 29, 30, 31, 32];
@@ -175,6 +192,50 @@ export interface StrikeInput {
   court?: CourtMap | null;
   /** The player's own setting for this stroke. */
   stage?: BounceStage;
+  /** Ball flight read from the video. */
+  ball?: BallReading | null;
+}
+
+/** Typical club rally ball arriving at the player, m/s (about 50 km/h). */
+export const DEFAULT_SPEED_IN = 14;
+/** Vertical ball speed at contact assumed for each stage when the bounce was not seen, m/s. */
+const STAGE_VZ: Record<BounceStage, number> = { rising: 2, peak: 0, falling: -2 };
+
+const kmh = (v: number) => Math.round(v * 3.6);
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const where = (s: Shot) => (s.result === 'net' || s.result === 'short' ? 'into the net' : s.result === 'long' ? `${Math.abs(s.depth!).toFixed(1)} m long` : `${s.depth!.toFixed(1)} m inside the baseline`);
+
+/** Plain-language effects of the bounce stage, face and path on this shot. */
+function explain(o: { stage: BounceStage; ball?: BallReading; shot: Shot; atPeak: Shot; faceSquare: Shot; face: number; faceAssumed: boolean; squareFace: number; path: number; height: number }): string[] {
+  const out: string[] = [];
+  const { shot, atPeak, faceSquare } = o;
+  const b = o.ball;
+  if (b?.bounceSeen && b.sinceApex !== undefined) {
+    const ms = Math.round(Math.abs(b.sinceApex) * 1000);
+    const when = Math.abs(b.sinceApex) < 0.03 ? 'right at the top of the bounce' : b.sinceApex < 0 ? `${ms} ms before the top of the bounce` : `${ms} ms after the top of the bounce`;
+    out.push(`You took this ball ${when}, ${b.dt!.toFixed(2)} s after it bounced${b.belowApex! > 0.03 ? `, ${Math.round(b.belowApex! * 100)} cm below its highest point (${b.apexHeight!.toFixed(2)} m)` : ''}.`);
+  } else if (b) out.push('The bounce was out of view, but the ball was dropping on screen into contact, so it was falling.');
+  const up = (deg: number) => (deg >= 0 ? `${Math.round(deg)}° up` : `${Math.round(-deg)}° down`);
+  out.push(`Off the strings: about ${kmh(shot.speed)} km/h, ${up(shot.launch)}, with about ${Math.round(Math.max(0, shot.rpm) / 50) * 50} rpm of topspin. ${Math.round(shot.square)}% of the racket's speed goes straight into the ball (compression); the rest brushes across it as spin.`);
+  const cmp = (alt: Shot) => {
+    const dl = alt.launch - shot.launch;
+    const dn = (alt.netClear - shot.netClear) * 100;
+    const ds = kmh(alt.speed) - kmh(shot.speed);
+    const parts: string[] = [];
+    if (Math.abs(dl) >= 0.5) parts.push(`launch ${Math.abs(dl).toFixed(dl > -10 && dl < 10 ? 1 : 0)}° ${dl > 0 ? 'higher' : 'lower'}`);
+    if (Math.abs(dn) >= 3 && shot.result !== 'short' && alt.result !== 'short') parts.push(`pass the net ${Math.round(Math.abs(dn))} cm ${dn > 0 ? 'higher' : 'lower'}`);
+    if (Math.abs(ds) >= 2) parts.push(`leave ${Math.abs(ds)} km/h ${ds > 0 ? 'faster' : 'slower'}`);
+    return parts.length ? parts.join(', ') : 'change very little';
+  };
+  if (o.stage !== 'peak') out.push(`${o.stage === 'falling' ? 'Dropping' : 'Rising'} ball: the same swing at the top of the bounce would ${cmp(atPeak)}.`);
+  const off = o.face - o.squareFace;
+  if (Math.abs(off) >= 3) {
+    const sq = o.squareFace >= 0 ? `${Math.round(o.squareFace)}° closed` : `${Math.round(-o.squareFace)}° open`;
+    out.push(`${o.faceAssumed ? 'If the face was vertical (it could not be read), it' : 'The face'} was ${Math.round(Math.abs(off))}° ${off > 0 ? 'more closed' : 'more open'} than square to this ball. Square to it (${sq}), the ball would ${cmp(faceSquare)}.`);
+  }
+  if (o.height < NET_STRAP && o.path < 18) out.push(`Contact was below the net strap with a fairly flat path (${Math.round(o.path)}°): a steeper low-to-high swing adds net clearance and topspin to bring it down.`);
+  if (o.height > NET_STRAP + HIGH_MARGIN && o.path > 30) out.push(`Contact was above the net with a steep path (${Math.round(o.path)}°): you had clearance, so a flatter, more forward swing would put more pace on it.`);
+  return out;
 }
 
 const GROUNDSTROKES = new Set(['forehand', 'backhand-1h', 'backhand-2h']);
@@ -195,7 +256,9 @@ export function analyseStrike(input: StrikeInput): Strike | undefined {
   const behind = behindBaselineAt(input.court ?? null, frames, c);
   let stage: BounceStage = 'falling';
   let stageSource: StageSource = 'assumed';
+  const ball = input.ball ?? undefined;
   if (input.stage) { stage = input.stage; stageSource = 'set'; }
+  else if (ball) { stage = ball.stage; stageSource = 'ball'; }
   else if (behind !== undefined) { stage = stageFromPosition(behind); stageSource = 'court'; }
 
   // Tracking quality at contact: how clearly the hitting hand is seen around the strike.
@@ -349,7 +412,38 @@ export function analyseStrike(input: StrikeInput): Strike | undefined {
   const firstFix = checks.find((x) => x.id === 'brush' && x.ok === false) ?? checks.find((x) => x.ok === false);
   const headline = lowTracking ? 'The hitting arm is hard to see at contact in this clip, so these readings are rough. Film with the hitting side toward the camera.' : firstFix ? firstFix.tip : checks.length ? 'Solid strike: face square for the bounce, the right drive for the height, and a full extension.' : 'Not enough tracking at contact to read this strike.';
 
-  return { stage, stageSource, behindBaseline: behind, ballHeight, height, face, faceTarget, faceError, path, drive, driveTarget, brake, trunkLead, extension, brushing, tracking, lowTracking, faceNote, score, checks, headline };
+  // Ball model: what this strike did to the ball, and the same swing taken at the peak or with the
+  // face square to this ball.
+  let racketSpeed: number | undefined;
+  let peakWrist = 0;
+  for (let i = c - 6; i <= c + 2; i++) {
+    const a = frames[i - 1]?.world, b = frames[i + 1]?.world;
+    if (!a || !b) continue;
+    const d = sub(b[dom.wrist], a[dom.wrist]);
+    peakWrist = Math.max(peakWrist, (Math.hypot(d.x, d.y, d.z) * fps) / 2);
+  }
+  if (peakWrist > 1) racketSpeed = clamp(peakWrist * HEAD_TO_WRIST, 10, 40);
+  const speedIn = clamp(ball?.speedIn ?? DEFAULT_SPEED_IN, 6, 35);
+  const vzIn = ball?.vz ?? STAGE_VZ[stage];
+  const faceAssumed = face === undefined;
+  const faceUsed = face ?? 0;
+  const h = ballHeight ?? 0.9;
+  const behindUsed = behind !== undefined ? Math.max(-6, behind) : 1;
+  let shot: Shot | undefined, atPeak: Shot | undefined, faceSquare: Shot | undefined;
+  const impact: string[] = [];
+  if (racketSpeed && path !== undefined) {
+    const base = { face: faceUsed, path, racketSpeed, speedIn, vzIn, height: h, behind: behindUsed };
+    shot = simulate(base);
+    // At the peak the ball sits a little higher and is not moving up or down.
+    const peakH = ball?.apexHeight ?? h;
+    atPeak = simulate({ ...base, vzIn: 0, height: peakH });
+    // Square: the face at right angles to the incoming ball.
+    const squareFace = (Math.atan2(vzIn, speedIn) * 180) / Math.PI;
+    faceSquare = simulate({ ...base, face: squareFace });
+    impact.push(...explain({ stage, ball, shot, atPeak, faceSquare, face: faceUsed, faceAssumed, squareFace, path, height: h }));
+  }
+
+  return { stage, stageSource, behindBaseline: behind, ballHeight, height, face, faceTarget, faceError, path, drive, driveTarget, brake, trunkLead, extension, brushing, tracking, lowTracking, faceNote, score, checks, headline, ball, racketSpeed, speedIn, speedInMeasured: ball?.speedIn !== undefined, faceAssumed, shot, atPeak, faceSquare, impact };
 }
 
 /** Plain summary across a session's strikes, for the study table. */

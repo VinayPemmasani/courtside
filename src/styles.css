@@ -570,3 +570,11 @@ canvas.placing { cursor: crosshair; }
 .study-text .strike-nums dd { text-align: left; color: #dfe4ee; }
 @media (max-width: 760px) { .study-grid { grid-template-columns: 1fr; } .strike-study { padding: 12px; } }
 .study-grid .strike-diagram { max-width: 520px; }
+.ball-busy { color: var(--accent, #d7ff3a); }
+.strike-impact { margin: 12px 0; padding: 10px 12px; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; background: rgba(215,255,58,0.04); }
+.strike-impact .label { margin-bottom: 6px; }
+.impact-list { margin: 8px 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; line-height: 1.45; }
+.strike-table td.stage-rising { color: #7fd4ff; }
+.strike-table td.stage-peak { color: #d7ff3a; }
+.strike-table td.stage-falling { color: #ffb36b; }
+.strike-table { overflow-x: auto; }

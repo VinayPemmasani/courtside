@@ -15,8 +15,10 @@ import { ContactReading, FocusCard, PowerSequence } from './Insights';
 import { topicFor } from '../drills/catalog';
 import { ProComparePanel } from './ProCompare';
 import { StrikePanel } from './StrikeLab';
+import { readStrokeBall } from '../render/balltrack';
+import { strikeApplies } from '../core';
 import { loadProRefs } from '../storage/pros';
-import { drawCallouts, drawProSkeleton, drawSkeleton, drawTrail, drawVideo, fullCrop, type LabelBox, type View } from '../render/overlay';
+import { drawBallTrack, drawCallouts, drawProSkeleton, drawSkeleton, drawTrail, drawVideo, fullCrop, type LabelBox, type View } from '../render/overlay';
 import { FrameGrabber } from '../render/grabber';
 import { canExportVideo, exportCarousel, exportPdf, exportVideo, renderCard, type CardContext } from '../render/export';
 import { exportStudioVideo, phaseHeadline } from '../render/reel';
@@ -53,6 +55,8 @@ export function SessionView({ id }: { id: string }) {
   const [placement, setPlacement] = useState(false);
   const [proMode, setProMode] = useState(false);
   const [strikeMode, setStrikeMode] = useState(false);
+  const [ballBusy, setBallBusy] = useState<string | null>(null);
+  const ballRun = useRef(0);
   const [proRefs, setProRefs] = useState<ProRef[] | null>(null);
   const [proKey, setProKey] = useState<string>();
   const [corners, setCorners] = useState<Vec2[] | null>(null);
@@ -126,13 +130,13 @@ export function SessionView({ id }: { id: string }) {
   }, [session, save]);
 
   // Drawing reads the latest state through a ref, so the playback loop never sees stale data.
-  const latest = useRef({ session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch });
-  latest.current = { session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch };
+  const latest = useRef({ session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch, strikeMode });
+  latest.current = { session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch, strikeMode };
 
   const draw = useCallback(() => {
     const v = videoRef.current;
     const c = canvasRef.current;
-    const { session: s, prepared: p, stroke: st, player: pl, selCallout: sel, studio: look, studioView: camView, figure: fig, placement: court, corners: pending, placed: bounces, selBounce: selB, proMode: proOn, proMatch: pm } = latest.current;
+    const { session: s, prepared: p, stroke: st, player: pl, selCallout: sel, studio: look, studioView: camView, figure: fig, placement: court, corners: pending, placed: bounces, selBounce: selB, proMode: proOn, proMatch: pm, strikeMode: strikeOn } = latest.current;
     if (!v || !c || !s || !p || !pl || !v.videoWidth) return;
     const dpr = window.devicePixelRatio || 1;
     const W = Math.round(c.clientWidth * dpr);
@@ -182,6 +186,7 @@ export function SessionView({ id }: { id: string }) {
       drawVideo(view, v);
       if (inStroke) drawTrail(view, p.frames, inStroke, i, pl.hand);
       drawSkeleton(view, p.frames[i]?.image ?? null);
+      if (strikeOn && inStroke?.ballRead?.reading) drawBallTrack(view, inStroke.ballRead.reading, i);
     }
     boxes.current = [];
     if (inStroke && v.paused) {
@@ -190,7 +195,36 @@ export function SessionView({ id }: { id: string }) {
     }
   }, []);
 
-  useEffect(() => { draw(); }, [draw, session, frame, coach, selCallout, prepared, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch]);
+  useEffect(() => { draw(); }, [draw, session, frame, coach, selCallout, prepared, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch, strikeMode]);
+
+  // Ball flight: once per contact, read the ball's bounce from the video for every groundstroke, so
+  // each shot knows whether it was taken rising, at the peak or falling.
+  useEffect(() => {
+    if (!session || !prepared || !player || !url || !grabber.current) return;
+    const todo = session.strokes.filter((s) => strikeApplies(s) && s.ballRead?.contact !== s.contactFrame);
+    if (!todo.length) return;
+    const run = ++ballRun.current;
+    const g = grabber.current;
+    (async () => {
+      const results = new Map<string, NonNullable<Stroke['ballRead']>>();
+      for (let k = 0; k < todo.length; k++) {
+        if (ballRun.current !== run) return;
+        setBallBusy(`Reading ball flight ${k + 1}/${todo.length}`);
+        let reading = null;
+        try { reading = await readStrokeBall({ grabber: g, frames: prepared.frames, stroke: todo[k], hand: player.hand, fps: session.fps, start: session.start }); } catch { reading = null; }
+        results.set(todo[k].id, { contact: todo[k].contactFrame, reading });
+      }
+      if (ballRun.current !== run) return;
+      setBallBusy(null);
+      setSession((cur) => {
+        if (!cur) return cur;
+        const next = { ...cur, strokes: cur.strokes.map((s) => { const r = results.get(s.id); return r && r.contact === s.contactFrame ? { ...s, ballRead: r } : s; }) };
+        store.saveSession(next);
+        return next;
+      });
+    })();
+    return () => { ballRun.current++; setBallBusy(null); };
+  }, [session?.strokes, prepared, player, url]);
   useEffect(() => { if (studio) loadStudioFonts().then(() => draw()); }, [studio, draw]);
   useEffect(() => () => studioScene.current?.dispose(), []);
 
@@ -411,6 +445,7 @@ export function SessionView({ id }: { id: string }) {
         <label className="toggle" title="Tap the court corners once, then tap each bounce for line calls, depth and speed"><input type="checkbox" checked={placement} onChange={(e) => { setPlacement(e.target.checked); if (e.target.checked) { setStudio(false); setProMode(false); setStrikeMode(false); } else setCorners(null); }} /> Shot placement</label>
         <label className="toggle" title="3D mannequin under an arena spotlight, with racket path, eye line, ball flight and weight transfer"><input type="checkbox" checked={studio} onChange={(e) => { setStudio(e.target.checked); if (e.target.checked) { setPlacement(false); setCorners(null); setProMode(false); } }} /> Studio look</label>
         <label className="toggle" title="Study how squarely and how hard each groundstroke meets the ball: face for the bounce, drive vs lift for the height, trunk brake, extension"><input type="checkbox" checked={strikeMode} onChange={(e) => { setStrikeMode(e.target.checked); if (e.target.checked) { setPlacement(false); setCorners(null); } }} /> Strike lab</label>
+        {ballBusy && <span className="muted small ball-busy">{ballBusy}</span>}
         <label className="toggle" title="Overlay the closest pro stroke from your Pro reference players and show the differences"><input type="checkbox" checked={proMode} onChange={(e) => { setProMode(e.target.checked); if (e.target.checked) { setStudio(false); setPlacement(false); setCorners(null); setProRefs(null); } }} /> Pro compare</label>
         {studio && (
           <div className="seg" title="Where the 3D camera stands">
@@ -589,7 +624,7 @@ export function SessionView({ id }: { id: string }) {
                 );
               })()}
               {strikeMode && (
-                <StrikePanel session={session} prepared={prepared} stroke={stroke} hand={player.hand} onStroke={(st) => updateStroke(st)}
+                <StrikePanel session={session} prepared={prepared} stroke={stroke} hand={player.hand} busy={ballBusy} onStroke={(st) => updateStroke(st)}
                   onSelect={(sid, f) => { setStrokeId(sid); seekFrame(f); }} />
               )}
               <FocusCard stroke={stroke} />

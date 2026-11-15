@@ -17,3 +17,5 @@ export * from './biomech';
 export * from './diagnose';
 export * from './procompare';
 export * from './strike';
+export * from './ball';
+export * from './flight';
