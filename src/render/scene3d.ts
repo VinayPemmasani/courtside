@@ -9,13 +9,14 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import type { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
-  anchorIndices, ballFlight, centreOfMass, COURT, deeperKnee, dirToCourt, shareAt, strokeSpace, toCourt,
+  anchorIndices, ballFlight, bodyAxes, centreOfMass, COURT, deeperKnee, dirToCourt, shareAt, strokeSpace, toCourt,
   type AnchorJoint, type BallFlight, type Handedness, type PoseFrame, type Status, type Stroke, type StrokeSpace, type Vec3, type WeightTransfer,
 } from '../core';
 import { alongPath, alongSegment, bodyDiscs, type Disc } from './layout';
 import { steadyBones } from '../core/tracking';
 import { animationFrames, racketTrack } from '../core/motion';
 import type { RacketPose } from '../core/racket';
+import type { ChapterLook } from '../core/breakdown';
 import { Athlete } from './athlete';
 import { Mannequin, mannequinMaterials } from './mannequin';
 import { RiggedMannequin } from './rigged';
@@ -79,6 +80,20 @@ export interface SceneInput {
   figure?: 'mannequin' | 'athlete';
   /** Dashed line from the eyes to the ball while the ball is shown (default on). */
   eyeLine?: boolean;
+  /**
+   * Step-by-step breakdown: a chapter camera around the player, a see-through body with lines
+   * through it, and ghost rackets tracing the swing. Always drawn on the court, never as filmed.
+   */
+  breakdown?: ChapterLook & { xray?: boolean; frontKnee?: number };
+}
+
+/** Named body points of the last breakdown frame, in court space, from the drawn model where it is loaded. */
+export interface BodyMarks {
+  lShoulder: THREE.Vector3; rShoulder: THREE.Vector3; lHip: THREE.Vector3; rHip: THREE.Vector3;
+  lKnee: THREE.Vector3; rKnee: THREE.Vector3; lAnkle: THREE.Vector3; rAnkle: THREE.Vector3;
+  hand: THREE.Vector3; head: THREE.Vector3; hipMid: THREE.Vector3; racketHead: THREE.Vector3 | null; grip: THREE.Vector3 | null;
+  /** +1 when the hitting hand works on the court's +x side of the body, -1 on the -x side. */
+  hitSide: number;
 }
 
 const v3 = (p: Vec3) => new THREE.Vector3(p.x, p.y, p.z);
@@ -92,7 +107,8 @@ export class StudioScene {
   private bloom: UnrealBloomPass;
   private athlete = new Athlete();
   private mannequin = new Mannequin();
-  private rigged = new RiggedMannequin(mannequinMaterials());
+  private rigMats = mannequinMaterials();
+  private rigged = new RiggedMannequin(this.rigMats);
   private figure: Athlete | Mannequin | RiggedMannequin = this.mannequin;
   private gtao: GTAOPass;
   private bokeh: BokehPass;
@@ -181,7 +197,7 @@ export class StudioScene {
   private withoutSoft<T extends Pass>(pass: T): T {
     const render = pass.render.bind(pass);
     pass.render = (...args: Parameters<Pass['render']>) => {
-      const hidden = [...this.soft, this.shaft, this.trail, this.path, this.eyeLine, this.drillTrail, ...this.ringMeshes].filter((o): o is THREE.Object3D => !!o && o.visible);
+      const hidden = [...this.soft, this.shaft, this.trail, this.path, this.eyeLine, this.drillTrail, this.bdLines, ...this.ghosts, ...this.ringMeshes].filter((o): o is THREE.Object3D => !!o && o.visible);
       hidden.forEach((o) => (o.visible = false));
       try { render(...args); } finally { hidden.forEach((o) => (o.visible = true)); }
     };
@@ -452,7 +468,9 @@ export class StudioScene {
   }
 
   render(raw: SceneInput) {
-    const footage = (raw.view ?? (raw.video ? 'footage' : 'coach')) === 'footage' && raw.video;
+    const footage = !raw.breakdown && (raw.view ?? (raw.video ? 'footage' : 'coach')) === 'footage' && raw.video;
+    this.setXray(!!raw.breakdown?.xray);
+    if (!raw.breakdown) this.hideBreakdown();
     this.courtGroup.visible = !footage;
     this.glow.visible = false;
     this.figure = raw.figure === 'athlete' ? this.athlete : this.rigged.loaded ? this.rigged : this.mannequin;
@@ -472,7 +490,9 @@ export class StudioScene {
 
     const o = space.origin;
     const z = input.zoom ?? 1;
-    if (input.view === 'video') this.videoCamera(space, input.orbit ?? 0, z);
+    if (input.breakdown && this.path) this.path.visible = false;
+    if (input.breakdown && w) this.breakdownExtras(input, P, space);
+    else if (input.view === 'video') this.videoCamera(space, input.orbit ?? 0, z);
     else this.coachCamera(space, input.orbit ?? 0, z);
 
     // Spotlight high above, a little beyond the player and to the camera's right, so the shaft shows
@@ -495,10 +515,10 @@ export class StudioScene {
     this.glow.visible = false;
     (this.scene.getObjectByName('under') as THREE.PointLight).position.set(o.x, 0.3, o.z + 0.4);
 
-    // Depth of field focused on the player; AO for contact shading.
-    this.gtao.enabled = true;
+    // Depth of field focused on the player; AO for contact shading (off for the see-through breakdown body).
+    this.gtao.enabled = !input.breakdown?.xray;
     this.gtao.camera = this.camera;
-    this.bokeh.enabled = true;
+    this.bokeh.enabled = !input.breakdown;
     this.bokeh.camera = this.camera;
     const u = this.bokeh.uniforms as Record<string, THREE.IUniform>;
     u.focus.value = this.camera.position.distanceTo(chest);
@@ -640,6 +660,7 @@ export class StudioScene {
    */
   private racketPath(input: SceneInput, space: StrokeSpace, onCourt: boolean) {
     if (this.path) { this.scene.remove(this.path); this.path.geometry.dispose(); this.path = null; }
+    this.pathPoses.clear();
     this.shown.path = [];
     const st = input.stroke;
     if (!st) return;
@@ -653,6 +674,7 @@ export class StudioScene {
       const P = (k: number) => v3(toCourt(w[k], space));
       const off = cache.get(i) ?? this.placeFigure(input, i, P, r, space, onCourt);
       pts.push(v3(toCourt(r.head, space)).add(off));
+      this.pathPoses.set(i, { r, off: off.clone(), space });
     }
     if (pts.length < 3) return;
     this.shown.path = pts;
@@ -739,6 +761,156 @@ export class StudioScene {
     });
   }
 
+  // ---------- Breakdown: see-through body, lines through it, ghost rackets, chapter camera ----------
+
+  private pathPoses = new Map<number, { r: RacketPose; off: THREE.Vector3; space: StrokeSpace }>();
+  private ghosts: THREE.Object3D[] = [];
+  private bdLines: THREE.Group | null = null;
+  private xray = false;
+  /** Body points of the last breakdown frame (court space), for the 2D readouts. */
+  marks: BodyMarks | null = null;
+
+  /** Make the mannequin see-through, like an anatomy diagram, so lines through the body show. */
+  private setXray(on: boolean) {
+    if (on === this.xray) return;
+    this.xray = on;
+    for (const m of [this.rigMats.shell, this.rigMats.joint, this.rigMats.dark]) {
+      m.transparent = on;
+      m.opacity = on ? (m === this.rigMats.dark ? 0.5 : 0.36) : 1;
+      m.depthWrite = !on;
+      m.needsUpdate = true;
+    }
+    this.rigged.group.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.renderOrder = on ? 2 : 0; });
+  }
+
+  private hideBreakdown() {
+    this.ghosts.forEach((g) => (g.visible = false));
+    if (this.bdLines) this.bdLines.visible = false;
+    this.marks = null;
+  }
+
+  /** A pale copy of the racket frame (no strings) for the swing trail. */
+  private ghost(k: number) {
+    while (this.ghosts.length <= k) {
+      const g = buildRacket();
+      const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.45, 0.5), transparent: true, opacity: 0.3, depthWrite: false, toneMapped: false });
+      g.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        const old = m.material as THREE.MeshStandardMaterial;
+        if (old.map) m.visible = false;
+        m.material = mat;
+        m.castShadow = false;
+        m.renderOrder = 5;
+      });
+      g.userData.mat = mat;
+      this.scene.add(g);
+      this.ghosts.push(g);
+    }
+    return this.ghosts[k];
+  }
+
+  /** Screen position (canvas pixels) of a court-space point in the last frame. */
+  toScreen(p: THREE.Vector3): { x: number; y: number } | null {
+    const v = p.clone().project(this.activeCam);
+    if (v.z > 1) return null;
+    return { x: ((v.x + 1) / 2) * this.canvas.width, y: ((1 - v.y) / 2) * this.canvas.height };
+  }
+
+  private breakdownExtras(input: SceneInput, P: (i: number) => THREE.Vector3, space: StrokeSpace) {
+    const bd = input.breakdown!;
+    const rig = this.figure === this.rigged ? this.rigged : null;
+    const J = (bone: string, lm: number) => rig?.joint(bone) ?? P(lm).add(new THREE.Vector3(0, this.figure.group.position.y, 0));
+    const left = input.hand === 'left';
+    const st = input.stroke;
+    // The body's own axes at contact (court space): where the hips face, and the hitting side.
+    let hitSide = left ? -1 : 1;
+    let fwd = new THREE.Vector3(0, 0, -1), lat = new THREE.Vector3(hitSide, 0, 0);
+    const wc = st ? input.frames[st.contactFrame]?.world : null;
+    if (wc) {
+      const ax = bodyAxes(wc, input.hand);
+      fwd = v3(dirToCourt(ax.forward, space)).setY(0).normalize();
+      lat = v3(dirToCourt(ax.lateralDom, space)).setY(0).normalize();
+      hitSide = Math.sign(lat.x) || hitSide;
+    }
+    const head = rig?.joint('head') ?? P(0);
+    const racketHead = this.shown.racket[1]?.clone() ?? null;
+    const grip = this.shown.racket[0]?.clone() ?? null;
+    const m: BodyMarks = {
+      lShoulder: J('upperarml', 11), rShoulder: J('upperarmr', 12), lHip: J('thighl', 23), rHip: J('thighr', 24),
+      lKnee: J('calfl', 25), rKnee: J('calfr', 26), lAnkle: J('footl', 27), rAnkle: J('footr', 28),
+      hand: rig?.hand(left ? 'l' : 'r') ?? P(left ? 15 : 16), head, hipMid: new THREE.Vector3(), racketHead, grip, hitSide,
+    };
+    m.hipMid.copy(m.lHip).add(m.rHip).multiplyScalar(0.5);
+    this.marks = m;
+
+    // Ghost rackets from the chapter's start to this frame, fading in toward now.
+    const frames: number[] = [];
+    for (let k = Math.max(bd.ghostsFrom, st?.startFrame ?? 0); k < input.i; k++) if (this.pathPoses.has(k)) frames.push(k);
+    const step = Math.max(1, Math.ceil(frames.length / 18));
+    const pick = frames.filter((_, k) => (frames.length - 1 - k) % step === 0);
+    let n = 0;
+    pick.forEach((f, k) => {
+      const { r, off } = this.pathPoses.get(f)!;
+      const g = this.ghost(n++);
+      const gp = v3(toCourt(r.grip, space)).add(off);
+      const tp = v3(toCourt(r.tip, space)).add(off);
+      const dir = tp.sub(gp).normalize();
+      const face = r.face ? v3(dirToCourt(r.face, space)).normalize() : new THREE.Vector3().crossVectors(dir, UP).normalize();
+      placeRacket(g, gp.addScaledVector(dir, 0.02), dir, face);
+      (g.userData.mat as THREE.MeshBasicMaterial).opacity = 0.04 + 0.22 * ((k + 1) / pick.length) ** 1.5;
+      g.visible = true;
+    });
+    for (let k = n; k < this.ghosts.length; k++) this.ghosts[k].visible = false;
+
+    // Lines through the see-through body.
+    if (this.bdLines) { this.scene.remove(this.bdLines); disposeTree(this.bdLines); }
+    const lines = new THREE.Group();
+    const AMBER = new THREE.Color(1.5, 0.95, 0.3), CYAN = new THREE.Color(0.35, 1.0, 1.55), WHITE = new THREE.Color(1.3, 1.3, 1.35);
+    const bar = (a: THREE.Vector3, b: THREE.Vector3, color: THREE.Color, r = 0.014, ext = 0) => {
+      const d = b.clone().sub(a);
+      const t = tube([a.clone().addScaledVector(d, -ext), a.clone().lerp(b, 0.5), b.clone().addScaledVector(d, ext)], r, color);
+      overlay(t);
+      lines.add(t);
+    };
+    const poly = (pts: THREE.Vector3[], color: THREE.Color) => {
+      for (let k = 0; k + 1 < pts.length; k++) bar(pts[k], pts[k + 1], color, 0.011);
+      for (const p of pts) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.022, 16, 10), new THREE.MeshBasicMaterial({ color, toneMapped: false })); s.position.copy(p); overlay(s); lines.add(s); }
+    };
+    if (bd.lines.includes('shoulders')) bar(m.lShoulder, m.rShoulder, AMBER, 0.016, 0.45);
+    if (bd.lines.includes('hips')) bar(m.lHip, m.rHip, CYAN, 0.016, 0.6);
+    if (bd.lines.includes('spine')) {
+      const sm = m.lShoulder.clone().add(m.rShoulder).multiplyScalar(0.5);
+      bar(m.hipMid, sm, WHITE, 0.01, 0.12);
+      bar(m.lShoulder, m.rShoulder, AMBER, 0.012, 0.2);
+      bar(m.lHip, m.rHip, CYAN, 0.012, 0.3);
+    }
+    if (bd.lines.includes('legs')) {
+      const frontLeft = bd.frontKnee !== undefined ? bd.frontKnee === 25 : !left;
+      poly([m.lHip, m.lKnee, m.lAnkle], frontLeft ? AMBER : CYAN);
+      poly([m.rHip, m.rKnee, m.rAnkle], frontLeft ? CYAN : AMBER);
+    }
+    this.bdLines = lines;
+    this.scene.add(lines);
+
+    // Chapter camera around a fixed point of the stroke, so it holds still while the body moves.
+    const target = new THREE.Vector3(space.origin.x, 0.95, space.origin.z);
+    const c = bd.camera;
+    if (c.top) {
+      // Straight down, with the way the hips face at contact pointing up the screen.
+      this.camera.up.copy(fwd);
+      this.camera.position.set(target.x, c.height, target.z).addScaledVector(fwd, -0.2);
+      this.camera.lookAt(target.x, 0.6, target.z);
+    } else {
+      // Circle the player from behind (0°) toward the hitting side (90° = side on, 180° = in front).
+      const yaw = THREE.MathUtils.degToRad(c.yaw);
+      const dir = fwd.clone().multiplyScalar(-Math.cos(yaw)).addScaledVector(lat, Math.sin(yaw)).normalize();
+      this.camera.up.set(0, 1, 0);
+      this.camera.position.copy(target).addScaledVector(dir, c.dist).setY(c.height);
+      this.camera.lookAt(target);
+    }
+  }
+
   // ---------- Drills: a key-framed body instead of a tracked clip ----------
 
   private props = new THREE.Group();
@@ -813,6 +985,8 @@ export class StudioScene {
     /** Live playback: skip the depth-of-field pass to keep the frame rate up. */
     fast?: boolean;
   }) {
+    this.setXray(false);
+    this.hideBreakdown();
     this.courtGroup.visible = true;
     this.renderPass.camera = this.camera;
     this.scene.fog = this.fog;
@@ -943,6 +1117,15 @@ function orient(m: THREE.Object3D, centre: THREE.Vector3, side: THREE.Vector3, u
 function tube(pts: THREE.Vector3[], r: number, color: THREE.Color) {
   const curve = new THREE.CatmullRomCurve3(pts);
   return new THREE.Mesh(new THREE.TubeGeometry(curve, Math.min(200, pts.length * 3), r, 8, false), new THREE.MeshBasicMaterial({ color, toneMapped: false, transparent: true, opacity: 0.95 }));
+}
+
+/** Draw on top of everything, through the see-through body. */
+function overlay(o: THREE.Object3D) {
+  const m = (o as THREE.Mesh).material as THREE.Material;
+  m.depthTest = false;
+  m.depthWrite = false;
+  m.transparent = true;
+  o.renderOrder = 30;
 }
 
 function disposeTree(o: THREE.Object3D) {

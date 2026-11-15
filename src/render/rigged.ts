@@ -133,6 +133,11 @@ export class RiggedMannequin {
     return this.b(n).bone.getWorldPosition(new THREE.Vector3());
   }
 
+  /** World position of a named bone (thighl, calfr, upperarml, footr, handl, head...), once loaded. */
+  joint(n: string) {
+    return this.loaded && this.bones.has(n) ? this.worldPos(n) : null;
+  }
+
   /** Where the model's hand is (wrist bone), for keeping the racket in it. */
   hand(side: 'l' | 'r') {
     return this.loaded ? this.worldPos(`hand${side}`) : null;

@@ -585,3 +585,23 @@ canvas.placing { cursor: crosshair; }
 .stage-body li span { display: block; }
 .stage-body li small { display: block; opacity: 0.7; }
 .stage-body li small.changed { opacity: 1; color: var(--accent, #d7ff3a); }
+
+/* Step-by-step breakdown panel */
+.breakdown-panel .bd-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.breakdown-panel .bd-head h4 { margin: 0; margin-right: auto; }
+.breakdown-panel .bd-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.breakdown-panel .bd-steps button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px; font-size: 12px; text-align: left; border-top: 3px solid var(--line-2); }
+.breakdown-panel .bd-steps button span { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+.breakdown-panel .bd-steps button.done { border-top-color: rgba(245,181,68,0.5); }
+.breakdown-panel .bd-steps button.on { border-top-color: var(--accent); color: #fff; }
+.breakdown-panel .bd-steps button.on span { color: var(--accent); }
+.breakdown-panel .bd-beats { margin: 0; padding-left: 16px; display: grid; gap: 6px; font-size: 13px; line-height: 1.45; }
+.breakdown-panel .bd-beats strong { color: var(--accent); margin-right: 4px; }
+.breakdown-panel .bd-readings { width: 100%; border-collapse: collapse; font-size: 13px; }
+.breakdown-panel .bd-readings td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.breakdown-panel .bd-readings td.v { font-family: var(--mono); font-weight: 700; text-align: right; color: #fff; white-space: nowrap; }
+.breakdown-panel .bd-readings tr.fix td.v { color: var(--fix); }
+.breakdown-panel .bd-readings tr.good td.v { color: var(--good); }
+.breakdown-panel .src { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 5px; border: 1px solid var(--line-2); color: var(--muted); white-space: nowrap; }
+.breakdown-panel .src.estimated { border-color: rgba(245,181,68,0.5); color: var(--accent); }
+@media (max-width: 640px) { .breakdown-panel .bd-steps { grid-template-columns: repeat(2, 1fr); } }

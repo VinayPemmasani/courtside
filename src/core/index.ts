@@ -19,3 +19,4 @@ export * from './procompare';
 export * from './strike';
 export * from './ball';
 export * from './flight';
+export * from './breakdown';
