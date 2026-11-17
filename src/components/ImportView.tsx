@@ -36,6 +36,10 @@ export function ImportView({ playerId }: { playerId: string }) {
 
   const start = async () => {
     if (!file || !url || !player) return;
+    // Start the on-screen video inside the tap, so phones load its frames (iOS only loads
+    // metadata until a video has played); it is paused again straight away.
+    const pv = videoRef.current;
+    if (pv) { pv.muted = true; pv.play()?.then(() => pv.pause()).catch(() => undefined); }
     setError(undefined);
     setStage('Starting…');
     setProgress(0);

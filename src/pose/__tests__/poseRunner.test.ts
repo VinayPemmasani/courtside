@@ -33,7 +33,11 @@ class FakeVideo {
   onerror: (() => void) | null = null;
   private l: Record<string, Set<() => void>> = {};
   set src(_u: string) { queueMicrotask(() => this.onloadeddata?.()); }
-  set currentTime(_t: number) { queueMicrotask(() => this.l.seeked?.forEach((f) => f())); }
+  readyState = 2; seeking = false; private _t = 0;
+  get currentTime() { return this._t; }
+  set currentTime(t: number) { this._t = t; queueMicrotask(() => this.l.seeked?.forEach((f) => f())); }
+  async play() {}
+  pause() {}
   addEventListener(n: string, f: () => void) { (this.l[n] ??= new Set()).add(f); }
   removeEventListener(n: string, f: () => void) { this.l[n]?.delete(f); }
   removeAttribute() {}

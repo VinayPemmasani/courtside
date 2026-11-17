@@ -69,15 +69,47 @@ export interface PoseRunOptions {
   video?: HTMLVideoElement | null;
 }
 
+/**
+ * Seek and wait until the frame at `t` can be drawn. Phones sometimes skip the `seeked` event (or
+ * fire it before a frame is decoded), so this also polls: done once the video is no longer seeking,
+ * sits at `t`, and has frame data.
+ */
 function seek(video: HTMLVideoElement, t: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const done = () => { cleanup(); resolve(); };
+    let poll: ReturnType<typeof setInterval> | 0 = 0;
+    const ready = () => !video.seeking && video.readyState >= 2 && Math.abs(video.currentTime - t) < 0.05;
+    const check = () => { if (ready()) { cleanup(); resolve(); } };
     const fail = () => { cleanup(); reject(new Error('Could not read the video at ' + t.toFixed(2) + 's')); };
-    const cleanup = () => { video.removeEventListener('seeked', done); video.removeEventListener('error', fail); };
-    video.addEventListener('seeked', done);
+    const cleanup = () => {
+      clearInterval(poll);
+      for (const e of ['seeked', 'canplay', 'loadeddata', 'timeupdate']) video.removeEventListener(e, check);
+      video.removeEventListener('error', fail);
+    };
+    for (const e of ['seeked', 'canplay', 'loadeddata', 'timeupdate']) video.addEventListener(e, check);
     video.addEventListener('error', fail);
-    video.currentTime = t;
+    poll = setInterval(check, 50);
+    if (Math.abs(video.currentTime - t) >= 1e-3 || video.seeking) video.currentTime = t;
+    check();
   });
+}
+
+/**
+ * Make sure the video has decoded data. iOS loads only metadata until a video has played, and then
+ * never finishes a seek: a muted, inline play() (allowed without a tap) followed by pause() fixes it.
+ */
+export async function primeVideo(video: HTMLVideoElement) {
+  if (video.readyState >= 2) return;
+  video.muted = true;
+  video.playsInline = true;
+  try { await video.play(); } catch { /* not allowed: the waits below still run */ }
+  video.pause();
+  if (video.readyState >= 2) return;
+  await withTimeout(new Promise<void>((resolve) => {
+    const ok = () => { video.removeEventListener('loadeddata', ok); video.removeEventListener('canplay', ok); resolve(); };
+    video.addEventListener('loadeddata', ok);
+    video.addEventListener('canplay', ok);
+    video.load();
+  }), 15000, 'The video did not load on this device. Try again, or export it from Photos as "Most Compatible" (H.264).');
 }
 
 /** Reject if `p` has not settled within `ms`, with a message the player can act on. */
@@ -120,6 +152,7 @@ export async function runPose(url: string, opts: PoseRunOptions): Promise<PoseFr
   opts.onStage?.('Opening the video…');
   const own = !opts.video;
   const video = await loadVideo(url, opts.video);
+  await primeVideo(video);
   opts.onStage?.('Tracking the player…');
   const end = Math.min(opts.end, video.duration);
   const total = Math.max(1, Math.floor((end - opts.start) * opts.fps) + 1);
