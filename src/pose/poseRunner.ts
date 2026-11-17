@@ -62,7 +62,11 @@ export interface PoseRunOptions {
   end: number;
   model: ModelSize;
   onProgress?: (done: number, total: number) => void;
+  /** What is happening before frames start (loading the model, opening the video). */
+  onStage?: (stage: string) => void;
   signal?: AbortSignal;
+  /** A video element already on the page showing this clip (more reliable on phones). */
+  video?: HTMLVideoElement | null;
 }
 
 function seek(video: HTMLVideoElement, t: number): Promise<void> {
@@ -76,16 +80,34 @@ function seek(video: HTMLVideoElement, t: number): Promise<void> {
   });
 }
 
-export function loadVideo(url: string): Promise<HTMLVideoElement> {
+/** Reject if `p` has not settled within `ms`, with a message the player can act on. */
+export function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
-    const v = document.createElement('video');
+    const id = setTimeout(() => reject(new Error(message)), ms);
+    p.then((v) => { clearTimeout(id); resolve(v); }, (e) => { clearTimeout(id); reject(e); });
+  });
+}
+
+/**
+ * Open a video for frame-accurate reading. Phones (iOS Safari in particular) often never fire
+ * `loadeddata` for a video that is not on the page, so metadata is enough here: every frame is
+ * read after a seek anyway. An element already on the page can be passed in and is used as is.
+ */
+export function loadVideo(url: string, existing?: HTMLVideoElement | null): Promise<HTMLVideoElement> {
+  if (existing && existing.readyState >= 1) { existing.pause(); return Promise.resolve(existing); }
+  return withTimeout(new Promise((resolve, reject) => {
+    const v = existing ?? document.createElement('video');
     v.muted = true;
     v.playsInline = true;
+    v.setAttribute('playsinline', '');
     v.preload = 'auto';
-    v.src = url;
-    v.onloadeddata = () => resolve(v);
+    const ok = () => resolve(v);
+    v.addEventListener('loadedmetadata', ok, { once: true });
+    v.addEventListener('loadeddata', ok, { once: true });
     v.onerror = () => reject(new Error('This video format could not be opened. Try MP4 (H.264) or MOV.'));
-  });
+    if (!existing) v.src = url;
+    v.load();
+  }), 20000, 'The video did not open on this device. Try again, or export it from Photos as "Most Compatible" (H.264).');
 }
 
 /**
@@ -93,8 +115,12 @@ export function loadVideo(url: string): Promise<HTMLVideoElement> {
  * Each sample seeks the video to an exact time, so results line up with playback frames.
  */
 export async function runPose(url: string, opts: PoseRunOptions): Promise<PoseFrame[]> {
-  const landmarker = await getLandmarker(opts.model);
-  const video = await loadVideo(url);
+  opts.onStage?.('Loading the pose model…');
+  const landmarker = await withTimeout(getLandmarker(opts.model), 90000, 'The pose model did not load. Check your connection and try again, or pick the Fast model.');
+  opts.onStage?.('Opening the video…');
+  const own = !opts.video;
+  const video = await loadVideo(url, opts.video);
+  opts.onStage?.('Tracking the player…');
   const end = Math.min(opts.end, video.duration);
   const total = Math.max(1, Math.floor((end - opts.start) * opts.fps) + 1);
   const frames: PoseFrame[] = [];
@@ -103,7 +129,7 @@ export async function runPose(url: string, opts: PoseRunOptions): Promise<PoseFr
   for (let i = 0; i < total; i++) {
     if (opts.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     const t = opts.start + i / opts.fps;
-    await seek(video, t);
+    await withTimeout(seek(video, t), 15000, `The video could not be read at ${t.toFixed(2)} s on this device.`);
     if (opts.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     const ts = nextTimestamp(lastTimestampMs, t, offsetMs);
     lastTimestampMs = ts;
@@ -125,7 +151,9 @@ export async function runPose(url: string, opts: PoseRunOptions): Promise<PoseFr
     if (i % 3 === 0) opts.onProgress?.(i + 1, total);
   }
   opts.onProgress?.(total, total);
-  video.removeAttribute('src');
-  video.load();
+  if (own) {
+    video.removeAttribute('src');
+    video.load();
+  }
   return frames;
 }

@@ -19,6 +19,7 @@ export function ImportView({ playerId }: { playerId: string }) {
   const [kind, setKind] = useState<SessionKind>('rally');
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string>();
+  const [stage, setStage] = useState('Starting…');
   const abort = useRef<AbortController>();
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -36,13 +37,15 @@ export function ImportView({ playerId }: { playerId: string }) {
   const start = async () => {
     if (!file || !url || !player) return;
     setError(undefined);
+    setStage('Starting…');
     setProgress(0);
     abort.current = new AbortController();
     try {
       const frames = await runPose(url, {
         fps, start: range[0], end: range[1], model, signal: abort.current.signal,
-        onProgress: (d, t) => setProgress(d / t),
+        onProgress: (d, t) => setProgress(d / t), onStage: setStage, video: videoRef.current,
       });
+      setStage('Finding the strokes…');
       const found = frames.filter((f) => f.world).length;
       if (found < frames.length * 0.2) throw new Error('No player was found in most of the clip. Film one player, large in frame, with their whole body visible.');
       const { strokes } = analyze({ frames, fps, hand: player.hand, rules });
@@ -132,7 +135,7 @@ export function ImportView({ playerId }: { playerId: string }) {
             ) : (
               <div>
                 <div className="progress"><div style={{ width: `${Math.round(progress * 100)}%` }} /></div>
-                <p className="muted">Tracking the player… {Math.round(progress * 100)}%</p>
+                <p className="muted">{stage} {stage.startsWith('Tracking') ? `${Math.round(progress * 100)}%` : ''}</p>
                 <button onClick={() => abort.current?.abort()}>Cancel</button>
               </div>
             )}

@@ -37,7 +37,8 @@ class FakeVideo {
   addEventListener(n: string, f: () => void) { (this.l[n] ??= new Set()).add(f); }
   removeEventListener(n: string, f: () => void) { this.l[n]?.delete(f); }
   removeAttribute() {}
-  load() {}
+  setAttribute() {}
+  load() { queueMicrotask(() => this.l.loadedmetadata?.forEach((f) => f())); }
 }
 (globalThis as any).document = { createElement: () => new FakeVideo() };
 
