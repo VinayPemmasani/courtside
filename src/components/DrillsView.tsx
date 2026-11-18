@@ -6,6 +6,7 @@ import { drillsFor, STROKE_NAME, TOPICS, type DrillStroke, type Topic } from '..
 import { DrillPlayer } from '../drills/play';
 import { exportDrillVideo, renderCollage, saveCollage } from '../drills/media';
 import { canExportVideo } from '../render/export';
+import { BodyPanel, DailyLinks, LifePage, type OpenDrill } from './LifeLinks';
 
 const SPEEDS = [1, 0.5, 0.25];
 
@@ -23,6 +24,7 @@ export function DrillsView({ topic: topicId, stroke: strokeIn, hand: handIn, bac
   const [where, setWhere] = useState<'on-court' | 'off-court'>('on-court');
   const shown = list.filter((x) => x.drill.where === where);
   const [drillId, setDrillId] = useState<string | undefined>();
+  const [life, setLife] = useState(false);
   const cur = shown.find((x) => x.drill.id === drillId) ?? shown[0] ?? list[0];
 
   // Keep the drill tab valid when the topic changes.
@@ -30,13 +32,31 @@ export function DrillsView({ topic: topicId, stroke: strokeIn, hand: handIn, bac
     if (!list.some((x) => x.drill.where === where)) setWhere(where === 'on-court' ? 'off-court' : 'on-court');
   }, [list, where]);
 
+  /** Jump to a fix (and one of its drills), choosing a stroke the drill is shown for. */
+  const open: OpenDrill = (tid, did) => {
+    const t = TOPICS.find((x) => x.id === tid);
+    if (!t) return;
+    const d = did ? t.drills.find((x) => x.id === did) : undefined;
+    const ok = (d?.strokes ?? t.strokes) as string[];
+    if (!strokeSel || !ok.includes(strokeSel)) setStroke(ok[0] as StrokeType);
+    setTopic(tid);
+    setWhere(d?.where ?? 'on-court');
+    setDrillId(did);
+    setLife(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <div className="drills-page">
       <aside className="drill-topics">
         {back && <button className="link back" onClick={() => go(back)}>← Back to the session</button>}
+        <button className={`topic life ${life ? 'on' : ''}`} onClick={() => setLife(true)}>
+          <strong>Everyday &amp; cross-training</strong>
+          <small>Stairs, yoga, rowing, swimming…</small>
+        </button>
         <h3>Technique fixes</h3>
         {TOPICS.map((t) => (
-          <button key={t.id} className={`topic ${t.id === topic.id ? 'on' : ''}`} onClick={() => { setTopic(t.id); setDrillId(undefined); }}>
+          <button key={t.id} className={`topic ${!life && t.id === topic.id ? 'on' : ''}`} onClick={() => { setTopic(t.id); setDrillId(undefined); setLife(false); }}>
             <strong>{t.title}</strong>
             <small>{t.drills.length} drills · {t.strokes.length > 1 ? 'all strokes' : STROKE_NAME[t.strokes[0]]}</small>
           </button>
@@ -44,7 +64,7 @@ export function DrillsView({ topic: topicId, stroke: strokeIn, hand: handIn, bac
         <p className="muted small">Drills follow common coaching practice; each fix lists its references.</p>
       </aside>
 
-      <section className="drill-main">
+      {life ? <section className="drill-main"><LifePage open={open} /></section> : <section className="drill-main">
         <header className="drill-head">
           <div className="label">Drills for the fix <i>|</i> <b className="r">{topic.title}</b></div>
           <p>{topic.why}</p>
@@ -75,13 +95,13 @@ export function DrillsView({ topic: topicId, stroke: strokeIn, hand: handIn, bac
             ))}
           </div>
         </header>
-        {cur && <DrillDetail key={`${topic.id}/${cur.drill.id}/${cur.stroke}/${hand}`} topic={topic} index={list.indexOf(cur)} drill={cur.drill} stroke={cur.stroke} hand={hand} />}
-      </section>
+        {cur && <DrillDetail key={`${topic.id}/${cur.drill.id}/${cur.stroke}/${hand}`} topic={topic} index={list.indexOf(cur)} drill={cur.drill} stroke={cur.stroke} hand={hand} open={open} />}
+      </section>}
     </div>
   );
 }
 
-function DrillDetail({ topic, drill, stroke, hand }: { topic: Topic; index: number; drill: Topic['drills'][number]; stroke: DrillStroke; hand: Handedness }) {
+function DrillDetail({ topic, drill, stroke, hand, open }: { topic: Topic; index: number; drill: Topic['drills'][number]; stroke: DrillStroke; hand: Handedness; open: OpenDrill }) {
   const motion = useMemo(() => drill.motion(stroke), [drill, stroke]);
   const wrap = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<StudioScene | null>(null);
@@ -202,6 +222,11 @@ function DrillDetail({ topic, drill, stroke, hand }: { topic: Topic; index: numb
           <h5>References for this fix</h5>
           <ul>{topic.sources.map((s) => <li key={s.url}><a href={s.url} target="_blank" rel="noreferrer">{s.title}</a></li>)}</ul>
         </div>
+      </div>
+
+      <div className="drill-wide">
+        <BodyPanel topic={topic} />
+        <DailyLinks topic={topic} drill={drill} open={open} />
       </div>
 
       <div className="drill-collage">
