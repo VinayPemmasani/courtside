@@ -38,6 +38,18 @@ const ANCHORS: { id: AnchorJoint; label: string }[] = [
   { id: 'head', label: 'Head' },
 ];
 
+/**
+ * iPhones load only a video's metadata until it has played, so frames never reach the canvas.
+ * A muted inline play() and pause() (allowed without a tap) makes it load frames; then `then` runs.
+ */
+function primeForPhone(v: HTMLVideoElement, then: () => void) {
+  if (v.readyState >= 2) { then(); return; }
+  v.muted = true;
+  const p = v.play();
+  if (!p) { v.pause(); then(); return; }
+  p.then(() => { v.pause(); then(); }, () => then());
+}
+
 export function SessionView({ id }: { id: string }) {
   const { go, rules } = useApp();
   const [session, setSession] = useState<Session>();
@@ -314,6 +326,12 @@ export function SessionView({ id }: { id: string }) {
     if (!v.paused) requestAnimationFrame(tick);
   }, [draw, timeToFrame]);
 
+  /** Redraw once the seeked frame is actually decoded (phones can fire `seeked` before it is). */
+  const drawWhenShown = () => {
+    const v = videoRef.current as (HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }) | null;
+    v?.requestVideoFrameCallback?.(() => draw());
+  };
+
   const seekFrame = (i: number) => {
     const v = videoRef.current;
     if (!v || !session) return;
@@ -330,7 +348,7 @@ export function SessionView({ id }: { id: string }) {
     if (v.paused) {
       if (timeToFrame(v.currentTime) >= nFrames - 1) v.currentTime = frameToTime(0);
       v.playbackRate = rate;
-      v.play();
+      v.play()?.catch(() => { /* blocked: nothing to do */ });
     } else v.pause();
   };
 
@@ -583,8 +601,10 @@ export function SessionView({ id }: { id: string }) {
                 playsInline
                 preload="auto"
                 className="hidden-video"
-                onLoadedData={() => seekFrame(stroke?.phases[0]?.frame ?? 0)}
-                onSeeked={() => draw()}
+                onLoadedMetadata={(e) => primeForPhone(e.currentTarget, () => seekFrame(stroke?.phases[0]?.frame ?? 0))}
+                onLoadedData={() => draw()}
+                onCanPlay={() => draw()}
+                onSeeked={() => { draw(); drawWhenShown(); }}
                 onPlay={() => { setPlaying(true); requestAnimationFrame(tick); }}
                 onPause={() => { setPlaying(false); setFrame(timeToFrame(videoRef.current!.currentTime)); draw(); }}
               />

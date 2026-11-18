@@ -74,7 +74,7 @@ export interface PoseRunOptions {
  * fire it before a frame is decoded), so this also polls: done once the video is no longer seeking,
  * sits at `t`, and has frame data.
  */
-function seek(video: HTMLVideoElement, t: number): Promise<void> {
+export function seek(video: HTMLVideoElement, t: number): Promise<void> {
   return new Promise((resolve, reject) => {
     let poll: ReturnType<typeof setInterval> | 0 = 0;
     const ready = () => !video.seeking && video.readyState >= 2 && Math.abs(video.currentTime - t) < 0.05;
