@@ -609,3 +609,44 @@ canvas.placing { cursor: crosshair; }
 .breakdown-panel .src { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 5px; border: 1px solid var(--line-2); color: var(--muted); white-space: nowrap; }
 .breakdown-panel .src.estimated { border-color: rgba(245,181,68,0.5); color: var(--accent); }
 @media (max-width: 640px) { .breakdown-panel .bd-steps { grid-template-columns: repeat(2, 1fr); } }
+/* Drills: the body behind each fix and everyday / cross-training links. */
+.drill-topics .topic.life { border-left-color: var(--teal); margin-bottom: 14px; background: rgba(67, 214, 196, 0.06); }
+.drill-topics .topic.life.on { border-left-color: var(--teal); background: rgba(67, 214, 196, 0.14); }
+.drill-wide { grid-column: 1 / -1; display: grid; gap: 22px; }
+.body-panel h4, .life-panel h4 { margin: 4px 0 10px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; }
+.body-panel h4 small, .life-panel h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
+.body-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.body-facts .fact { display: grid; gap: 4px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-top: 2px solid var(--accent); color: var(--text); text-decoration: none; }
+.body-facts .fact:hover { border-color: var(--line-2); border-top-color: var(--accent); }
+.body-facts .fact b { font-size: 22px; color: var(--accent); letter-spacing: 0.01em; }
+.body-facts .fact span { font-size: 12px; line-height: 1.45; color: var(--muted); }
+.body-map { display: grid; grid-template-columns: 120px 1fr; gap: 8px 14px; margin: 0; font-size: 13px; line-height: 1.5; max-width: 980px; }
+.body-map dt { color: var(--teal); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10.5px; padding-top: 3px; }
+.body-map dt.r { color: var(--fix); }
+.body-map dd { margin: 0; }
+.life-filter { margin-bottom: 10px; flex-wrap: wrap; }
+.life-filter small { opacity: 0.65; margin-left: 3px; }
+.life-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.life-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--teal); font-size: 12.5px; line-height: 1.45; }
+.life-card.k-yoga { border-left-color: #b98cff; }
+.life-card.k-sport { border-left-color: #5aa8ff; }
+.life-card.k-gym { border-left-color: var(--accent); }
+.life-card header { display: flex; gap: 6px; align-items: center; justify-content: space-between; }
+.life-card .kind { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.life-card .this { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-ink, #111); background: var(--accent); padding: 1px 6px; font-weight: 700; }
+.life-card h5 { margin: 0; font-size: 14px; color: var(--text); }
+.life-card p { margin: 0; }
+.life-card .dose { color: var(--accent); font-weight: 600; }
+.life-card .why b, .life-card .care b { display: block; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 1px; }
+.life-card .care b { color: var(--fix); }
+.life-card .links { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 2px; }
+.life-card .links > span { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; margin-right: 2px; }
+.life-card .chip { font-size: 11px; padding: 2px 8px; }
+.life-card .chip.fixchip { border-color: rgba(255, 92, 122, 0.45); color: var(--fix); }
+.life-card .ref { font-size: 11px; color: var(--teal); margin-top: auto; padding-top: 4px; }
+.life-page .life-grid { margin-bottom: 16px; }
+@media (max-width: 700px) {
+  .body-map { grid-template-columns: 1fr; gap: 2px; }
+  .body-map dd { margin-bottom: 8px; }
+  .life-grid { grid-template-columns: 1fr; }
+}
