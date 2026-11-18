@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { Grip, Pt } from './athlete';
+import { dress } from './clothes';
 
 /**
- * The studio mannequin as a professionally made, rigged model, posed from the tracked landmarks.
+ * The studio figure: a realistic, rigged human body in matte clay, with a t-shirt, shorts and
+ * trainers, posed from the tracked landmarks.
  *
- * Model: "Mannequiny" (Open 3D Mannequin) by Luciano Muñoz for GDQuest, CC-BY 4.0,
- * https://github.com/gdquest-demos/godot-3d-mannequin (attribution: GDQuest and contributors,
- * https://www.gdquest.com/). It has a 45-bone humanoid rig with fingers and a jointed, segmented body.
- * We use its mesh and skeleton with our own materials; its animations are not used.
+ * Model: "Superhero Male" from Quaternius' Universal Base Characters (CC0, https://quaternius.com/).
+ * We keep its body mesh, normal map and skeleton (UE-style bones: pelvis, spine_01-03, thigh_l…);
+ * eyes, eyebrows and colour textures are removed, and the clothes are built on it in clothes.ts.
  *
  * Retargeting: the model's bind pose is a T-pose facing +z with its left side on +x. Each driven bone
  * gets a target frame built from the landmarks (a main direction plus a second direction that fixes
@@ -18,7 +19,7 @@ import type { Grip, Pt } from './athlete';
  * their segment. Bone lengths stay the model's, scaled to the player's leg and trunk length.
  */
 
-const MODEL_URL = `${import.meta.env.BASE_URL ?? '/'}studio/mannequin.glb`;
+const MODEL_URL = `${import.meta.env.BASE_URL ?? '/'}studio/athlete.glb`;
 
 const X = new THREE.Vector3(1, 0, 0);
 const Y = new THREE.Vector3(0, 1, 0);
@@ -72,17 +73,32 @@ export class RiggedMannequin {
   }
 
   private setup(scene: THREE.Object3D, materials: { shell: THREE.Material; joint: THREE.Material; dark: THREE.Material }) {
+    // Bones go by the names the posing uses: upperarm_l -> upperarml, Head -> head.
+    scene.traverse((o) => {
+      if ((o as THREE.Bone).isBone) o.name = o.name.replace(/_([lr])$/, '$1').toLowerCase();
+    });
+    const bodies: THREE.SkinnedMesh[] = [];
     scene.traverse((o) => {
       const m = o as THREE.SkinnedMesh;
-      if (!m.isSkinnedMesh) return;
+      if (m.isSkinnedMesh) bodies.push(m);
+    });
+    for (const m of bodies) {
       m.skeleton.pose();
       m.castShadow = true;
       m.receiveShadow = true;
       m.frustumCulled = false;
-      const name = (m.material as THREE.Material).name;
-      // Body shell in the glossy white; the joint rings and the ear discs in the cooler joint grey.
-      m.material = name === 'Azul' ? materials.shell : materials.joint;
-    });
+      // Matte clay skin with the model's sculpted normal map; the clothes in the same clay, a touch softer.
+      const src = m.material as THREE.MeshStandardMaterial;
+      const shell = materials.shell as THREE.MeshStandardMaterial;
+      if (src.normalMap && !shell.normalMap) {
+        shell.normalMap = src.normalMap;
+        shell.normalScale = new THREE.Vector2(0.8, 0.8);
+        shell.needsUpdate = true;
+      }
+      m.material = materials.shell;
+      scene.updateMatrixWorld(true);
+      dress(m, materials.joint);
+    }
     scene.updateMatrixWorld(true);
     scene.traverse((o) => {
       const b = o as THREE.Bone;
@@ -155,7 +171,8 @@ export class RiggedMannequin {
   lowest() {
     if (!this.loaded) return 0;
     const s = this.root!.scale.x;
-    return Math.min(...['balll', 'ballr'].map((n) => this.worldPos(n).y - 0.02 * s), ...['footl', 'footr'].map((n) => this.worldPos(n).y - 0.1 * s));
+    // Soles of the trainers below the ball and ankle bones (bind pose: 0.04 m and 0.105 m).
+    return Math.min(...['balll', 'ballr'].map((n) => this.worldPos(n).y - 0.04 * s), ...['footl', 'footr'].map((n) => this.worldPos(n).y - 0.105 * s));
   }
 
   update(P: Pt, dominant: 'l' | 'r' = 'r', grip: Grip | null = null) {
@@ -185,8 +202,15 @@ export class RiggedMannequin {
     root.updateMatrixWorld(true);
     const dChest = frame(up, shSide).multiply(frame(Y, X).invert());
     const mid = dPelvis.clone().slerp(dChest, 0.5);
-    this.setWorld('spine_01', mid.clone().multiply(this.b('spine_01').world.clone()));
-    this.setWorld('spine_02', dChest.clone().multiply(this.b('spine_02').world.clone()));
+    if (this.bones.has('spine_03')) {
+      // Three spine bones: spread the twist from the hips to the chest.
+      this.setWorld('spine_01', dPelvis.clone().slerp(dChest, 0.33).multiply(this.b('spine_01').world.clone()));
+      this.setWorld('spine_02', dPelvis.clone().slerp(dChest, 0.67).multiply(this.b('spine_02').world.clone()));
+      this.setWorld('spine_03', dChest.clone().multiply(this.b('spine_03').world.clone()));
+    } else {
+      this.setWorld('spine_01', mid.clone().multiply(this.b('spine_01').world.clone()));
+      this.setWorld('spine_02', dChest.clone().multiply(this.b('spine_02').world.clone()));
+    }
     for (const c of ['claviclel', 'clavicler']) this.setWorld(c, dChest.clone().multiply(this.b(c).world.clone()));
 
     // Head from the ear line and the nose.

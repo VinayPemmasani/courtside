@@ -15,20 +15,21 @@ import { basis, ellipsoid, flipZ, Loft, type Grip, type Pt } from './athlete';
 const UP = new THREE.Vector3(0, 1, 0);
 
 export function mannequinMaterials() {
+  // Matte white clay, like a sculpted figure: soft highlights, a faint sheen at the edges.
   const shell = new THREE.MeshPhysicalMaterial({
-    color: '#eceef2',
-    roughness: 0.36,
+    color: '#dcdcd8',
+    roughness: 0.62,
     metalness: 0,
-    clearcoat: 0.7,
-    clearcoatRoughness: 0.22,
-    sheen: 0.3,
-    sheenRoughness: 0.5,
-    sheenColor: new THREE.Color('#dfe8ff'),
-    envMapIntensity: 1.1,
+    sheen: 0.35,
+    sheenRoughness: 0.8,
+    sheenColor: new THREE.Color('#ffffff'),
+    envMapIntensity: 0.8,
   });
+  // Clothes (and the fallback figure's joints): the same clay, slightly softer and cooler.
   const joint = shell.clone();
-  joint.color.set('#c7cbd4');
-  joint.roughness = 0.42;
+  joint.color.set('#d2d3d1');
+  joint.roughness = 0.75;
+  joint.side = THREE.DoubleSide;
   const dark = new THREE.MeshPhysicalMaterial({ color: '#23262d', roughness: 0.35, clearcoat: 0.8, clearcoatRoughness: 0.2 });
   return { shell, joint, dark };
 }

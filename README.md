@@ -77,5 +77,5 @@ Measurements use the model's 3D landmarks (metres, centred on the hips), so they
 
 MediaPipe Pose (Apache 2.0) is the pose model; no AGPL components are used.
 
-The studio's 3D mannequin is "Mannequiny" (Open 3D Mannequin) by Luciano Muñoz for GDQuest, CC-BY 4.0,
-attributed to GDQuest and contributors (https://www.gdquest.com/); see `public/studio/CREDITS.txt`.
+The studio's 3D figure is the "Superhero Male" body from Quaternius' Universal Base Characters (CC0),
+shown in matte clay with clothes built over it; see `public/studio/CREDITS.txt`.

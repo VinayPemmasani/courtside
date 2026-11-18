@@ -579,7 +579,7 @@ export function SessionView({ id }: { id: string }) {
         )}
         {studio && (
           <div className="seg" title="How the 3D player looks">
-            <button className={figure === 'mannequin' ? 'on' : ''} onClick={() => setFigure('mannequin')} title="3D mannequin: 'Mannequiny' by Luciano Muñoz / GDQuest and contributors, CC-BY 4.0">Mannequin</button>
+            <button className={figure === 'mannequin' ? 'on' : ''} onClick={() => setFigure('mannequin')} title="3D clay athlete (body: Quaternius Universal Base Characters, CC0)">Mannequin</button>
             <button className={figure === 'athlete' ? 'on' : ''} onClick={() => setFigure('athlete')}>Player</button>
           </div>
         )}

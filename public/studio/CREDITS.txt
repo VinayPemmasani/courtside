@@ -1,6 +1,8 @@
-mannequin.glb
-  "Mannequiny" (Open 3D Mannequin) by Luciano Muñoz for GDQuest.
-  Source: https://github.com/gdquest-demos/godot-3d-mannequin (godot/assets/3d/mannequiny/mannequiny-0.3.0.glb)
-  Licence: CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
-  Attribution: GDQuest and contributors (https://www.gdquest.com/)
-  Changes: materials replaced; animations unused; posed live from pose-tracking landmarks.
+athlete.glb
+  "Superhero Male" from the Universal Base Characters pack by Quaternius.
+  Source: https://quaternius.com/packs/universalbasecharacters.html
+  Licence: CC0 1.0 (public domain, https://creativecommons.org/publicdomain/zero/1.0/)
+  Changes: eyes, eyebrows and colour textures removed; normal map reduced to 1024 px; rendered in a
+  matte clay material with t-shirt, shorts and trainers built over the body (src/render/clothes.ts);
+  posed live from pose-tracking landmarks.
+
