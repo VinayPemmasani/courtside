@@ -14,11 +14,12 @@ import { SetupBadge } from './FilmingGuide';
 import { ContactReading, FocusCard, PowerSequence } from './Insights';
 import { topicFor } from '../drills/catalog';
 import { ProComparePanel } from './ProCompare';
-import { StrikePanel } from './StrikeLab';
+import { StrikeCardsBar, StrikePanel } from './StrikeLab';
+import { exportStrikeImage, exportStrikeImages, exportStrikePdf, exportStrikeVideo, renderStrikeCard, strikeCardInput } from '../render/strikeCards';
 import { BreakdownPanel } from './Breakdown';
 import { BREAKDOWN_SLOW, breakdownInput, exportBreakdownVideo, holdMs, renderBreakdown } from '../render/breakdown';
 import { readStrokeBall } from '../render/balltrack';
-import { applyRules, strikeApplies, strokeBreakdown, strokeStage } from '../core';
+import { analyseStrike, applyRules, courtMap, strikeApplies, strikeCards, strokeBreakdown, strokeStage } from '../core';
 import { loadProRefs } from '../storage/pros';
 import { drawBallTrack, drawCallouts, drawProSkeleton, drawSkeleton, drawTrail, drawVideo, fullCrop, type LabelBox, type View } from '../render/overlay';
 import { FrameGrabber } from '../render/grabber';
@@ -73,6 +74,9 @@ export function SessionView({ id }: { id: string }) {
   const [bdStep, setBdStep] = useState(0);
   const [bdPlaying, setBdPlaying] = useState(false);
   const bdClock = useRef({ start: 0, step: 0, playing: false });
+  /** Strike lab 3D card on show (null = the video), and its slow-motion run-in clock. */
+  const [cardK, setCardK] = useState<number | null>(null);
+  const cardClock = useRef({ start: 0, playing: false });
   const [ballBusy, setBallBusy] = useState<string | null>(null);
   const ballRun = useRef(0);
   const [proRefs, setProRefs] = useState<ProRef[] | null>(null);
@@ -129,7 +133,13 @@ export function SessionView({ id }: { id: string }) {
   }, [proMode, proRefs, stroke, prepared, player, session?.id]);
   const proMatch = proMatches.find((m) => m.ref.key === proKey) ?? proMatches[0];
   const nFrames = session?.frames.length ?? 0;
-  const breakdown = useMemo(() => (bdMode && stroke && prepared && player && session ? strokeBreakdown({ frames: prepared.frames, yaw: prepared.yaw, fps: session.fps, hand: player.hand }, stroke) : null), [bdMode, stroke, prepared, player, session?.fps]);
+  const cardsOn = strikeMode && cardK !== null;
+  const breakdown = useMemo(() => ((bdMode || cardsOn) && stroke && prepared && player && session ? strokeBreakdown({ frames: prepared.frames, yaw: prepared.yaw, fps: session.fps, hand: player.hand }, stroke) : null), [bdMode, cardsOn, stroke, prepared, player, session?.fps]);
+  const strikeNow = useMemo(() => {
+    if (!strikeMode || !stroke || !prepared || !player || !session || !strikeApplies(stroke)) return undefined;
+    return analyseStrike({ frames: prepared.frames, stroke, hand: player.hand, fps: prepared.fps, yaw: prepared.yaw, hipYaw: prepared.hipYaw ?? [], court: session.court ? courtMap(session.court) : null, stage: stroke.strikeStage, ball: stroke.ballRead?.reading });
+  }, [strikeMode, stroke, prepared, player, session?.court]);
+  const cards = useMemo(() => (strikeMode && breakdown && stroke ? strikeCards(breakdown, strikeNow, stroke) : null), [strikeMode, breakdown, strikeNow, stroke]);
 
   const timeToFrame = useCallback((t: number) => {
     if (!session) return 0;
@@ -149,13 +159,13 @@ export function SessionView({ id }: { id: string }) {
   }, [session, save]);
 
   // Drawing reads the latest state through a ref, so the playback loop never sees stale data.
-  const latest = useRef({ session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch, strikeMode, breakdown });
-  latest.current = { session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch, strikeMode, breakdown };
+  const latest = useRef({ session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch, strikeMode, breakdown, bdMode, cards, cardK });
+  latest.current = { session, prepared, stroke, player, coach, selCallout, studio, studioView, figure, placement, corners, placed, selBounce, proMode, proMatch, strikeMode, breakdown, bdMode, cards, cardK };
 
   const draw = useCallback(() => {
     const v = videoRef.current;
     const c = canvasRef.current;
-    const { session: s, prepared: p, stroke: st, player: pl, selCallout: sel, studio: look, studioView: camView, figure: fig, placement: court, corners: pending, placed: bounces, selBounce: selB, proMode: proOn, proMatch: pm, strikeMode: strikeOn, breakdown: bd } = latest.current;
+    const { session: s, prepared: p, stroke: st, player: pl, selCallout: sel, studio: look, studioView: camView, figure: fig, placement: court, corners: pending, placed: bounces, selBounce: selB, proMode: proOn, proMatch: pm, strikeMode: strikeOn, breakdown: bd, bdMode: bdOn, cards: cs, cardK: ck } = latest.current;
     if (!v || !c || !s || !p || !pl || !v.videoWidth) return;
     const dpr = window.devicePixelRatio || 1;
     const W = Math.round(c.clientWidth * dpr);
@@ -185,7 +195,25 @@ export function SessionView({ id }: { id: string }) {
       boxes.current = [];
       return;
     }
-    if (bd && st) {
+    if (strikeOn && !bdOn && cs && ck !== null && bd && st) {
+      // Strike lab 3D card: a smooth slow-motion run into the card's frame, then the hold.
+      if (!studioScene.current) {
+        studioScene.current = new StudioScene(W, H);
+        studioScene.current.ready.then(() => draw());
+      }
+      const card = cs[Math.min(ck, cs.length - 1)];
+      const clock = cardClock.current;
+      const run = ((card.frame - card.from) / s.fps / BREAKDOWN_SLOW) * 1000;
+      const el = clock.playing ? performance.now() - clock.start : run + 1000;
+      if (clock.playing && el >= run + 1000) clock.playing = false;
+      const fi = el < run ? card.from + (el / run) * (card.frame - card.from) : card.frame;
+      const hold = el < run ? 0 : Math.min(1, (el - run) / 1000);
+      const weight = weightTransfer(p.frames, st, pl.hand);
+      renderStrikeCard({ ctx: view.ctx, W, H }, studioScene.current, strikeCardInput({ frames: p.frames, fps: s.fps, hand: pl.hand, stroke: st, weight, figure: 'mannequin' }, bd, card, fi), bd, { card, total: cs.length, hold });
+      boxes.current = [];
+      return;
+    }
+    if (bdOn && bd && st) {
       // Step-by-step breakdown: the chapter's slow-motion run, then a hold with the readouts.
       if (!studioScene.current) {
         studioScene.current = new StudioScene(W, H);
@@ -203,7 +231,7 @@ export function SessionView({ id }: { id: string }) {
       }
       if (!clock.playing) el = Math.max(el, run(ch) + 0.3 * holdMs(ch));
       const r = run(ch);
-      const i = el < r ? ch.from + Math.floor((el / r) * (ch.frame - ch.from)) : ch.frame;
+      const i = el < r ? ch.from + (el / r) * (ch.frame - ch.from) : ch.frame;
       const hold = el < r ? 0 : Math.min(1, (el - r) / holdMs(ch));
       const beat = clock.playing ? Math.min(ch.beats.length - 1, Math.floor(hold * ch.beats.length)) : 0;
       const weight = weightTransfer(p.frames, st, pl.hand);
@@ -250,6 +278,20 @@ export function SessionView({ id }: { id: string }) {
     return () => cancelAnimationFrame(id);
   }, [bdMode, bdPlaying, draw]);
   useEffect(() => { if (bdMode) loadStudioFonts().then(() => draw()); }, [bdMode, draw]);
+  // Strike card run-in animation.
+  useEffect(() => {
+    if (!cardsOn) return;
+    let id = 0;
+    loadStudioFonts().then(() => draw());
+    const loop = () => { draw(); if (cardClock.current.playing) id = requestAnimationFrame(loop); };
+    id = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(id);
+  }, [cardsOn, cardK, cards, draw]);
+  const showCard = (k: number | null) => {
+    cardClock.current = { start: performance.now(), playing: k !== null };
+    setCardK(k);
+    if (k !== null) videoRef.current?.pause();
+  };
   const bdGo = (k: number, play: boolean) => {
     bdClock.current = { start: performance.now(), step: k, playing: play };
     setBdStep(k);
@@ -590,7 +632,7 @@ export function SessionView({ id }: { id: string }) {
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
             />
-            {phaseHere && stroke && !studio && !proMode && !bdMode && (
+            {phaseHere && stroke && !studio && !proMode && !bdMode && !cardsOn && (
               <div className="phase-badge"><span>{phaseHere.index}</span>{phaseHere.label}</div>
             )}
             {url && (
@@ -713,6 +755,13 @@ export function SessionView({ id }: { id: string }) {
                   onPlay={() => (bdPlaying ? (bdClock.current.playing = false, setBdPlaying(false), draw()) : bdGo(bdStep >= 3 ? 0 : bdStep, true))}
                   exporting={busy}
                   onExport={canExportVideo() && breakdown ? () => runExport('Breakdown video', (c, st, onP) => exportBreakdownVideo(c, st, breakdown, onP)) : undefined} />
+              )}
+              {strikeMode && (
+                <StrikeCardsBar cards={cards} card={cardK} onCard={showCard} busy={busy}
+                  onSaveOne={() => cards && cardK !== null && breakdown && runExport('Image', (c, st) => exportStrikeImage(c, st, breakdown, cards, cards[cardK]))}
+                  onSaveAll={() => cards && breakdown && runExport('Images', (c, st, onP) => exportStrikeImages(c, st, breakdown, cards, onP))}
+                  onPdf={() => cards && breakdown && runExport('PDF', (c, st, onP) => exportStrikePdf(c, st, breakdown, cards, { score: strikeNow?.score, headline: strikeNow?.headline }, onP))}
+                  onVideo={canExportVideo() ? () => cards && breakdown && runExport('Video', (c, st, onP) => exportStrikeVideo(c, st, breakdown, cards, onP)) : undefined} />
               )}
               {strikeMode && (
                 <StrikePanel session={session} prepared={prepared} stroke={stroke} hand={player.hand} busy={ballBusy} onStroke={(st) => updateStroke({ ...st, ...applyRules(st, rules, player.hand) })}

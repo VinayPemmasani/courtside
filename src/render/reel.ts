@@ -18,11 +18,12 @@ export function transferLine(weight: WeightTransfer | null, stroke: Stroke): str
  * Keep a frame on screen for `ms` of video, re-drawing it every few frames so the camera's slow
  * orbit (driven by video time) keeps moving during holds.
  */
-async function hold(writer: FrameWriter, ms: number, draw: (videoTime: number) => void) {
-  let left = ms / 1000;
+async function hold(writer: FrameWriter, ms: number, draw: (videoTime: number, done: number) => void) {
+  const all = ms / 1000;
+  let left = all;
   do {
-    draw(writer.time);
-    const step = Math.min(left, 2 / 30);
+    draw(writer.time, all > 0 ? (all - left) / all : 0);
+    const step = Math.min(left, 1 / 30);
     await writer.add(step);
     left -= step;
   } while (left > 1e-3);
@@ -69,9 +70,10 @@ export async function exportStudioVideo(ctx: CardContext, stroke: Stroke, onProg
   const total = 2.2 + n * (slow / 1000) * 1.5 + phases.length * 2.6 + 1.8;
   const base = { frames, fps: session.fps, hand: player.hand, stroke, weight };
 
-  const show = async (i: number, ms: number, headline: Headline, callouts: Callout[] = [], ball = true) => {
-    await hold(writer, ms, (t) => {
-      renderStudio(view, scene, { ...base, i, ball, orbit: 0.22 * Math.sin(t / 9) }, { headline, callouts, gauge: shareAt(weight, i) });
+  /** Hold frame `i` for `ms`; with `glide`, move smoothly on toward frame i+1 meanwhile (slow motion). */
+  const show = async (i: number, ms: number, headline: Headline, callouts: Callout[] = [], ball = true, glide = false) => {
+    await hold(writer, ms, (t, done) => {
+      renderStudio(view, scene, { ...base, i: glide ? i + done : i, ball, orbit: 0.22 * Math.sin(t / 9) }, { headline, callouts, gauge: shareAt(weight, i) });
     });
     onProgress?.(Math.min(1, writer.time / total));
   };
@@ -89,7 +91,7 @@ export async function exportStudioVideo(ctx: CardContext, stroke: Stroke, onProg
     let prev = stroke.startFrame;
     for (const p of phases) {
       const h = phaseHeadline(stroke, p);
-      for (let i = prev; i < p.frame; i++) await show(i, slow, h);
+      for (let i = prev; i < p.frame; i++) await show(i, slow, h, [], true, true);
       await show(p.frame, 2600, h, phaseCallouts(stroke, p.id));
       prev = p.frame;
     }
@@ -101,7 +103,7 @@ export async function exportStudioVideo(ctx: CardContext, stroke: Stroke, onProg
       tone: 'good',
       subtitle: transferLine(weight, stroke) ?? 'Racket path and ball flight.',
     };
-    for (let i = stroke.startFrame; i <= stroke.endFrame; i++) await show(i, slow * 0.5, outro);
+    for (let i = stroke.startFrame; i < stroke.endFrame; i++) await show(i, slow * 0.5, outro, [], true, true);
     await show(stroke.endFrame, 1800, outro);
   } finally {
     scene.dispose();

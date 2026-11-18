@@ -97,6 +97,22 @@ export interface BodyMarks {
 }
 
 const v3 = (p: Vec3) => new THREE.Vector3(p.x, p.y, p.z);
+const mix = (a: Vec3, b: Vec3, f: number): Vec3 => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: a.z + (b.z - a.z) * f });
+const unit3 = (v: Vec3): Vec3 => { const l = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x / l, y: v.y / l, z: v.z / l }; };
+/** The body between two frames (for smooth slow motion): joints blended, `f` 0..1 from frame i to i+1. */
+function worldAt(frames: PoseFrame[], i: number, f: number) {
+  const a = frames[i]?.world, b = frames[i + 1]?.world;
+  if (!a || !b || f <= 1e-3) return a ?? null;
+  return a.map((p, k) => mix(p, b[k], f));
+}
+/** The racket between two frames: grip, head and tip blended, shaft and face re-normalised. */
+function racketAt(t: (RacketPose | null)[], i: number, f: number): RacketPose | null {
+  const a = t[i], b = t[i + 1];
+  if (!a || !b || f <= 1e-3) return a ?? null;
+  const dir = unit3(mix(a.dir, b.dir, f));
+  const face = a.face && b.face ? unit3(mix(a.face, b.face, f)) : a.face;
+  return { grip: mix(a.grip, b.grip, f), head: mix(a.head, b.head, f), tip: mix(a.tip, b.tip, f), dir, face };
+}
 const UP = new THREE.Vector3(0, 1, 0);
 
 export class StudioScene {
@@ -404,6 +420,8 @@ export class StudioScene {
   }
 
   /** The racket through a clip, per set of drawn frames. */
+  /** Fraction of the way from the current frame to the next (sub-frame slow motion). */
+  private sub = 0;
   private tracks = new WeakMap<PoseFrame[], (RacketPose | null)[]>();
   /** Where the figure's hand sat relative to the tracked wrist, per frame, for drawing the swing path. */
   private gripOffsets = new WeakMap<PoseFrame[], Map<string, THREE.Vector3>>();
@@ -478,8 +496,10 @@ export class StudioScene {
     if (footage) return this.renderFootage(raw);
     this.renderPass.camera = this.camera;
     this.scene.fog = this.fog;
-    const input = { ...raw, frames: this.steadyFrames(raw.frames, raw.fps) };
-    const w = input.frames[input.i]?.world;
+    const i0 = Math.floor(raw.i);
+    this.sub = raw.i - i0;
+    const input = { ...raw, i: i0, frames: this.steadyFrames(raw.frames, raw.fps) };
+    const w = worldAt(input.frames, i0, this.sub);
     const { space, flight } = this.spaceFor(input);
     this.figure.group.visible = !!w;
     this.racket.visible = !!w;
@@ -533,9 +553,11 @@ export class StudioScene {
 
   private renderFootage(raw: SceneInput) {
     const ft = this.footageFrames(raw.frames, raw.video!, raw.fps);
-    const input: SceneInput = { ...raw, frames: ft.frames, ball: false };
+    const i0 = Math.floor(raw.i);
+    this.sub = raw.i - i0;
+    const input: SceneInput = { ...raw, i: i0, frames: ft.frames, ball: false };
     const space = StudioScene.FLAT;
-    const w = input.frames[input.i]?.world;
+    const w = worldAt(input.frames, i0, this.sub);
     this.figure.group.visible = !!w;
     this.racket.visible = !!w;
     this.current = w ? { w, space } : null;
@@ -639,7 +661,7 @@ export class StudioScene {
   }
 
   private pose(input: SceneInput, P: (i: number) => THREE.Vector3, space: StrokeSpace, onCourt = true) {
-    const r = this.track(input.frames, input.hand, input.fps)[input.i] ?? null;
+    const r = racketAt(this.track(input.frames, input.hand, input.fps), input.i, this.sub);
     this.racket.position.copy(this.placeFigure(input, input.i, P, r, space, onCourt));
     this.racket.visible = !!r;
     this.shown.racket = [];
@@ -685,7 +707,7 @@ export class StudioScene {
   private ballAndTrail(input: SceneInput, flight: BallFlight | null) {
     if (this.trail) { this.scene.remove(this.trail); this.trail.geometry.dispose(); this.trail = null; }
     const st = input.stroke;
-    const t = st ? (input.i - st.contactFrame) / input.fps : 0;
+    const t = st ? (input.i + this.sub - st.contactFrame) / input.fps : 0;
     const now = input.ball !== false && flight ? flight.at(t) : null;
     this.ball.visible = !!now;
     this.ballLight.visible = !!now;

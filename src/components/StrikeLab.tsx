@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   analyseStrike, ballPathAngle, DEFAULT_RULES, formatMetric, METRIC_INFO, PHASE_LABEL, ruleForStage, type KeyPoint, type PhaseId, type Rule, type StrokeType, BRAKE_MIN, BRUSH_FACE, BRUSH_PATH, BRUSH_PATH_ANY, courtMap, driveShare, DRIVE_TARGET, EXTENSION_MIN, FACE_TARGET, heightBand, NET_STRAP,
-  strikeApplies, strikeSummary, type BounceStage, type Handedness, type Height, type Strike, type Stroke,
+  strikeApplies, strikeSummary, type BounceStage, type Handedness, type Height, type Strike, type StrikeCard, type Stroke,
 } from '../core';
 import type { Prepared } from '../core/analyze';
 import type { Session } from '../storage/db';
@@ -399,6 +399,49 @@ export function StrikeStudy() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Strike lab 3D cards: pick a numbered card to see it on the 3D figure (or go back to the video),
+ * and save the cards as images, a PDF or a video.
+ */
+export function StrikeCardsBar({ cards, card, onCard, busy, onSaveOne, onSaveAll, onPdf, onVideo }: {
+  cards: StrikeCard[] | null;
+  card: number | null;
+  onCard: (k: number | null) => void;
+  busy?: string | null;
+  onSaveOne: () => void;
+  onSaveAll: () => void;
+  onPdf: () => void;
+  onVideo?: () => void;
+}) {
+  return (
+    <div className="insight strike-cards">
+      <div className="label">Strike lab <i>|</i> <b>3D cards</b></div>
+      <div className="sc-tabs">
+        <button className={card === null ? 'on' : ''} onClick={() => onCard(null)}>Video</button>
+        {card === null && !cards && <button className="primary" onClick={() => onCard(0)}>Show 3D cards</button>}
+        {cards?.map((c, k) => (
+          <button key={c.id} className={card === k ? 'on' : ''} onClick={() => onCard(k)} title={c.verdict?.text}>
+            <span className={`sc-n ${c.verdict?.ok === true ? 'ok' : c.verdict?.ok === false ? 'no' : ''}`}>{c.n}</span>{c.title}
+          </button>
+        ))}
+      </div>
+      {cards && card !== null && cards[card] && (
+        <p className="muted small">{cards[card].verdict ? `${cards[card].verdict!.ok ? '✓' : cards[card].verdict!.ok === false ? '✗' : '?'} ${cards[card].verdict!.text}. ` : ''}Tap the card again to replay it.</p>
+      )}
+      {cards && (
+        <div className="sc-export">
+          <button onClick={onSaveOne} disabled={!!busy || card === null}>This image</button>
+          <button onClick={onSaveAll} disabled={!!busy}>All images</button>
+          <button onClick={onPdf} disabled={!!busy}>PDF</button>
+          {onVideo && <button onClick={onVideo} disabled={!!busy}>Video</button>}
+          {busy && <span className="muted small">{busy}</span>}
+        </div>
+      )}
+      {!cards && <p className="muted small">Each step of the stroke on the 3D figure, with its angles and numbers and a pass or fix, ready to save as images or a PDF.</p>}
     </div>
   );
 }

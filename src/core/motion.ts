@@ -164,7 +164,7 @@ export function racketTrack(frames: PoseFrame[], hand: Handedness, fps: number):
     }
     // Directions, lightly smoothed both ways so the simulation's start-up never shows.
     const dirs = heads.map((h, n) => norm3(sub3(h, wrist(s + n))));
-    const sm = (xs: number[]) => gauss(xs, xs.map(() => 1), 0.03 * fps);
+    const sm = (xs: number[]) => gauss(xs, xs.map(() => 1), 0.045 * fps);
     const dx = sm(dirs.map((d) => d.x)), dy = sm(dirs.map((d) => d.y)), dz = sm(dirs.map((d) => d.z));
     const D = dirs.map((_, n) => norm3({ x: dx[n], y: dy[n], z: dz[n] }));
     // String face: along the head's travel, square to the shaft; when the head is still, toward the net (+z).
@@ -177,9 +177,13 @@ export function racketTrack(frames: PoseFrame[], hand: Handedness, fps: number):
       const f = sub3(want, mul3(d, dot3(want, d)));
       return norm3(f, norm3(cross3(d, UP), { x: 1, y: 0, z: 0 }));
     });
-    const fx = gauss(faces.map((f) => f.x), faces.map(() => 1), 0.05 * fps);
-    const fy = gauss(faces.map((f) => f.y), faces.map(() => 1), 0.05 * fps);
-    const fz = gauss(faces.map((f) => f.z), faces.map(() => 1), 0.05 * fps);
+    // The strings have two sides: keep each face on the same side as the last one, so the
+    // racket never spins half a turn about its shaft between frames.
+    for (let n = 1; n < faces.length; n++) if (dot3(faces[n], faces[n - 1]) < 0) faces[n] = mul3(faces[n], -1);
+    // Smooth the tilt harder than the shaft: the face is the least certain part of the estimate.
+    const fx = gauss(faces.map((f) => f.x), faces.map(() => 1), 0.08 * fps);
+    const fy = gauss(faces.map((f) => f.y), faces.map(() => 1), 0.08 * fps);
+    const fz = gauss(faces.map((f) => f.z), faces.map(() => 1), 0.08 * fps);
     D.forEach((d, n) => {
       const g = wrist(s + n);
       let f = { x: fx[n], y: fy[n], z: fz[n] };

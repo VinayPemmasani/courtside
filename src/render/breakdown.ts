@@ -26,6 +26,10 @@ export interface BreakdownFrame {
   beat: number;
   /** 0..1 how far into the hold; readouts fade in over the first part. */
   hold: number;
+  /** Leave out parts of the layer (the Strike lab cards draw their own header and stats). */
+  body?: boolean;
+  panels?: boolean;
+  header?: boolean;
 }
 
 /** Scene input for one breakdown frame. */
@@ -40,7 +44,7 @@ export function renderBreakdown(v: Surface, scene: StudioScene, input: SceneInpu
   drawBreakdownLayer(v, scene, input, f);
 }
 
-function chip(ctx: CanvasRenderingContext2D, s: number, x: number, y: number, text: string, colour: string, tag?: string, align: 'left' | 'right' | 'center' = 'left') {
+export function chip(ctx: CanvasRenderingContext2D, s: number, x: number, y: number, text: string, colour: string, tag?: string, align: 'left' | 'right' | 'center' = 'left') {
   ctx.save();
   ctx.font = `700 ${26 * s}px ${MONO}`;
   const tw = ctx.measureText(text).width;
@@ -69,7 +73,7 @@ function chip(ctx: CanvasRenderingContext2D, s: number, x: number, y: number, te
   return { x: x0, w, h };
 }
 
-const tagOf = (r?: Reading) => (r?.source === 'estimated' ? 'EST.' : 'MEAS.');
+export const tagOf = (r?: Reading) => (r?.source === 'estimated' ? 'EST.' : 'MEAS.');
 const colourOf = (r: Reading | undefined, fallback: string) => (r?.status === 'fix' ? RED : fallback);
 
 function dashedLine(ctx: CanvasRenderingContext2D, s: number, a: { x: number; y: number }, b: { x: number; y: number }, colour: string, width = 3, dash = 14) {
@@ -107,11 +111,11 @@ export function drawBreakdownLayer(v: Surface, scene: StudioScene, input: SceneI
   const show = Math.min(1, f.hold * 4);
   const m = scene.marks;
   const P = (p: THREE.Vector3 | null | undefined) => (p ? scene.toScreen(p) : null);
-  const i = input.i;
+  const i = Math.round(input.i);
 
   ctx.save();
   ctx.globalAlpha = show;
-  if (m && show > 0) {
+  if (m && show > 0 && f.body !== false) {
     if (c.id === 'coil' || c.id === 'finish') {
       // Labels at the outer ends of the shoulder and hip lines.
       const sh = reading(c.id === 'coil' ? 'shoulderTurn' : 'uncoil');
@@ -125,7 +129,7 @@ export function drawBreakdownLayer(v: Surface, scene: StudioScene, input: SceneI
       const at = (arr: number[]) => arr[Math.max(0, Math.min(arr.length - 1, i - tu.from))];
       if (s2 && sh) chip(ctx, s, s2.x + 16 * s, s2.y, `SHOULDERS ${c.id === 'coil' ? Math.round(Math.abs(at(tu.shoulders))) + '°' : formatReading(sh)}`, AMBER, tagOf(sh), s2.x > W * 0.6 ? 'right' : 'left');
       if (h1 && c.id === 'coil') chip(ctx, s, h1.x - 16 * s, h1.y, `HIPS ${Math.round(Math.abs(at(tu.hips)))}°`, CYAN, 'MEAS.', h1.x < W * 0.4 ? 'left' : 'right');
-      if (c.id === 'coil') drawTurnGauge(v, s, at(tu.shoulders), at(tu.hips), reading('sep'));
+      if (c.id === 'coil' && f.panels !== false) drawTurnGauge(v, s, at(tu.shoulders), at(tu.hips), reading('sep'));
       if (c.id === 'finish') {
         // Balance: plumb line from the head to the floor, and the middle of the feet.
         const headFloor = m.head.clone().setY(0.01);
@@ -171,6 +175,7 @@ export function drawBreakdownLayer(v: Surface, scene: StudioScene, input: SceneI
   }
   ctx.restore();
 
+  if (f.panels === false) { if (f.header !== false) drawHeader(v, s, input.stroke, f); return; }
   // Bottom panels.
   ctx.save();
   ctx.globalAlpha = show;
@@ -193,11 +198,11 @@ export function drawBreakdownLayer(v: Surface, scene: StudioScene, input: SceneI
   }
   ctx.restore();
 
-  drawHeader(v, s, input.stroke, f);
+  if (f.header !== false) drawHeader(v, s, input.stroke, f);
 }
 
 /** Layer scale: like the studio's, but landscape frames keep bigger text. */
-const bdScale = (W: number, H: number) => Math.min(W / 1080, H / 1100);
+export const bdScale = (W: number, H: number) => Math.min(W / 1080, H / 1100);
 
 /** Header: STEP n/4, chapter title, four progress segments, and the caption beat. */
 function drawHeader(v: Surface, s: number, stroke: Stroke | undefined, f: BreakdownFrame) {
@@ -429,9 +434,12 @@ export async function exportBreakdownVideo(ctx: CardContext, stroke: Stroke, b: 
   const base = { frames, fps: session.fps, hand: player.hand, stroke, weight };
   try {
     for (const c of b.chapters) {
-      for (let i = c.from; i < c.frame; i++) {
+      // Slow motion at a full 30 frames a second, gliding between the filmed frames.
+      const outFrames = Math.max(1, Math.round((c.frame - c.from) * slow * 30));
+      for (let k = 0; k < outFrames; k++) {
+        const i = c.from + ((c.frame - c.from) * k) / outFrames;
         renderBreakdown(view, scene, breakdownInput({ ...base, i }, b, c), { breakdown: b, chapter: c, beat: 0, hold: 0 });
-        await writer.add(slow);
+        await writer.add(1 / 30);
       }
       const ms = holdMs(c);
       for (let t = 0; t < ms; t += 1000 / 30) {

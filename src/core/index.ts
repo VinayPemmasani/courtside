@@ -20,3 +20,4 @@ export * from './strike';
 export * from './ball';
 export * from './flight';
 export * from './breakdown';
+export * from './strikeCards';
