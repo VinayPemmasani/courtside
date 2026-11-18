@@ -142,9 +142,81 @@ export function loadVideo(url: string, existing?: HTMLVideoElement | null): Prom
   }), 20000, 'The video did not open on this device. Try again, or export it from Photos as "Most Compatible" (H.264).');
 }
 
+/** iPhone / iPad (including iPadOS that reports itself as a Mac). */
+export function isAppleMobile(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints ?? 0) > 1);
+}
+
+class SeekStuck extends Error {}
+
+type Detect = (t: number, mediaTime: number) => PoseFrame;
+
+/**
+ * Read frames by playing the clip through (muted, slowed down) and catching each presented frame,
+ * instead of seeking frame by frame. iOS often never completes a seek on a paused video, but it
+ * always plays. Grid slots that no presented frame landed on take the nearest frame that did.
+ */
+async function readByPlayback(
+  video: HTMLVideoElement, from: number, end: number, fps: number, slots: (PoseFrame | null)[], first: number,
+  detect: Detect, opts: PoseRunOptions,
+): Promise<void> {
+  const total = slots.length;
+  const start = opts.start;
+  const rvfc = (video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: (now: number, m: { mediaTime: number }) => void) => number }).requestVideoFrameCallback?.bind(video);
+  video.muted = true;
+  video.playsInline = true;
+  video.pause();
+  video.playbackRate = 0.4;
+  video.currentTime = Math.max(0, from - 0.05);
+  await new Promise<void>((resolve, reject) => {
+    let done = false;
+    let lastProgress = performance.now();
+    let lastMedia = -1;
+    let filled = 0;
+    const finish = (err?: Error) => {
+      if (done) return;
+      done = true;
+      clearInterval(watch);
+      video.removeEventListener('ended', onEnded);
+      video.pause();
+      if (err) reject(err); else resolve();
+    };
+    const onEnded = () => finish();
+    const take = (mediaTime: number) => {
+      if (done) return;
+      if (opts.signal?.aborted) { finish(new DOMException('Cancelled', 'AbortError')); return; }
+      if (mediaTime > lastMedia + 1e-4) { lastMedia = mediaTime; lastProgress = performance.now(); }
+      const k = Math.round((mediaTime - start) * fps);
+      if (k >= first && k < total && !slots[k]) {
+        try { slots[k] = detect(start + k / fps, mediaTime); } catch (e) { finish(e as Error); return; }
+        filled++;
+        if (filled % 3 === 0) opts.onProgress?.(Math.min(total, k + 1), total);
+      }
+      if (mediaTime >= end - 0.5 / fps) finish();
+    };
+    const onFrame = (_now: number, m: { mediaTime: number }) => { take(m.mediaTime); if (!done) rvfc!(onFrame); };
+    const onRaf = () => { take(video.currentTime); if (!done) requestAnimationFrame(onRaf); };
+    video.addEventListener('ended', onEnded);
+    // Nothing new for a while: the clip stopped playing.
+    const watch = setInterval(() => {
+      if (video.paused && !done && video.readyState >= 2) video.play().catch(() => {});
+      if (performance.now() - lastProgress > 12000) {
+        finish(filled > 0 ? undefined : new Error('The video would not play on this device. Try again, or export it from Photos as "Most Compatible" (H.264).'));
+      }
+    }, 500);
+    if (rvfc) rvfc(onFrame); else requestAnimationFrame(onRaf);
+    const p = video.play();
+    if (p) p.catch((e) => finish(new Error('The video would not play on this device (' + (e?.name ?? 'blocked') + '). Tap Analyse again.')));
+  });
+  video.playbackRate = 1;
+}
+
 /**
  * Run pose estimation over [start, end] of a video at `fps` samples per second.
- * Each sample seeks the video to an exact time, so results line up with playback frames.
+ * Each sample seeks the video to an exact time, so results line up with playback frames. When
+ * seeking does not work (iPhone), the clip is played through and frames are caught as they show.
  */
 export async function runPose(url: string, opts: PoseRunOptions): Promise<PoseFrame[]> {
   opts.onStage?.('Loading the pose model…');
@@ -152,19 +224,15 @@ export async function runPose(url: string, opts: PoseRunOptions): Promise<PoseFr
   opts.onStage?.('Opening the video…');
   const own = !opts.video;
   const video = await loadVideo(url, opts.video);
-  await primeVideo(video);
+  await primeVideo(video).catch(() => { /* playback below loads it */ });
   opts.onStage?.('Tracking the player…');
-  const end = Math.min(opts.end, video.duration);
+  const end = Math.min(opts.end, Number.isFinite(video.duration) ? video.duration : opts.end);
   const total = Math.max(1, Math.floor((end - opts.start) * opts.fps) + 1);
-  const frames: PoseFrame[] = [];
+  const slots: (PoseFrame | null)[] = new Array(total).fill(null);
   // Continue this run's timeline after wherever the landmarker's clock left off.
   const offsetMs = lastTimestampMs + 1 - Math.round(opts.start * 1000);
-  for (let i = 0; i < total; i++) {
-    if (opts.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
-    const t = opts.start + i / opts.fps;
-    await withTimeout(seek(video, t), 15000, `The video could not be read at ${t.toFixed(2)} s on this device.`);
-    if (opts.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
-    const ts = nextTimestamp(lastTimestampMs, t, offsetMs);
+  const detect: Detect = (t, mediaTime) => {
+    const ts = nextTimestamp(lastTimestampMs, mediaTime, offsetMs);
     lastTimestampMs = ts;
     let res;
     try {
@@ -176,17 +244,49 @@ export async function runPose(url: string, opts: PoseRunOptions): Promise<PoseFr
     }
     const img = res.landmarks[0];
     const world = res.worldLandmarks[0];
-    frames.push({
+    return {
       t,
       image: img ? img.map((p) => ({ x: p.x, y: p.y, v: p.visibility ?? 1 })) : null,
       world: world ? world.map((p) => ({ x: p.x, y: p.y, z: p.z })) : null,
-    });
-    if (i % 3 === 0) opts.onProgress?.(i + 1, total);
+    };
+  };
+
+  let i = 0;
+  if (!isAppleMobile()) {
+    try {
+      for (; i < total; i++) {
+        if (opts.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+        const t = opts.start + i / opts.fps;
+        await withTimeout(seek(video, t), i === 0 ? 5000 : 8000, 'seek').catch((e) => { throw e instanceof DOMException ? e : new SeekStuck(); });
+        if (opts.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+        slots[i] = detect(t, t);
+        if (i % 3 === 0) opts.onProgress?.(i + 1, total);
+      }
+    } catch (e) {
+      if (!(e instanceof SeekStuck)) throw e;
+    }
   }
+  if (i < total) {
+    opts.onStage?.('Tracking the player (playing the clip through)…');
+    try { video.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch { /* ignore */ }
+    await readByPlayback(video, opts.start + i / opts.fps, end, opts.fps, slots, i, detect, opts);
+  }
+  // Fill slots no frame landed on with the nearest one that did.
+  const have = slots.map((f, k) => (f ? k : -1)).filter((k) => k >= 0);
+  if (!have.length) throw new Error('No frames could be read from this video on this device. Try exporting it from Photos as "Most Compatible" (H.264).');
+  const frames: PoseFrame[] = slots.map((f, k) => {
+    if (f) return f;
+    let best = have[0];
+    for (const h of have) if (Math.abs(h - k) < Math.abs(best - k)) best = h;
+    return { ...slots[best]!, t: opts.start + k / opts.fps };
+  });
   opts.onProgress?.(total, total);
   if (own) {
     video.removeAttribute('src');
     video.load();
+  } else {
+    video.pause();
+    try { video.currentTime = opts.start; } catch { /* ignore */ }
   }
   return frames;
 }
