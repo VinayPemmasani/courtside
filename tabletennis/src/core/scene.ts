@@ -1,0 +1,176 @@
+import type { Handedness, PoseFrame, Vec3 } from './types';
+import { sides } from './landmarks';
+import { estimateRacket } from './racket';
+
+/**
+ * Placing a stroke beside a virtual table. Pose world landmarks are metres around the hips with
+ * y down; the scene is metres with y up, the floor at y = 0, the net along x at z = 0 and the
+ * player's end of the table at z = +1.37, so the player hits toward −z.
+ */
+
+/** A regulation table: 2.74 m × 1.525 m, playing surface 0.76 m above the floor, net 15.25 cm high. */
+export const TABLE = { length: 2.74, width: 1.525, height: 0.76, net: 0.1525, netOverhang: 0.1525, line: 0.02 };
+
+/**
+ * The table's playing surface as a "court" plan for shot placement (court.ts): x across the table,
+ * y along it. Singles and doubles use the same surface; doubles adds the centre line.
+ */
+export const COURT = { length: TABLE.length, doubles: TABLE.width, singles: TABLE.width, service: TABLE.length / 2, netPost: TABLE.net, net: TABLE.net };
+
+/** How one stroke is placed on the court. */
+export interface StrokeSpace {
+  /** Rotation about the vertical axis (radians) that turns the swing direction toward the net. */
+  yaw: number;
+  /** Pose y of the floor (the lowest foot at the start of the stroke). */
+  floor: number;
+  /** Where the hips stand on the court. */
+  origin: Vec3;
+  /**
+   * Row-major 3x3 rotation that levels the camera's view (y up, z toward the camera) so the player
+   * stands upright on the court even when the camera was tilted. Identity when absent.
+   */
+  level?: number[];
+}
+
+const I3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+const mul = (m: number[], v: Vec3): Vec3 => ({ x: m[0] * v.x + m[1] * v.y + m[2] * v.z, y: m[3] * v.x + m[4] * v.y + m[5] * v.z, z: m[6] * v.x + m[7] * v.y + m[8] * v.z });
+/** Pose world point (y down, z away from the camera) in camera axes with y up and z toward the camera, levelled. */
+const up = (p: Vec3, level?: number[]): Vec3 => mul(level ?? I3, { x: p.x, y: -p.y, z: -p.z });
+
+/**
+ * The rotation that makes the player's average standing axis (ankles to shoulders) vertical,
+ * capped at 30°. Single-camera world landmarks follow the camera's tilt, so without this a
+ * camera pointing down makes the player look like they are falling over on the court.
+ */
+export function levelFor(frames: PoseFrame[], from: number, to: number): number[] {
+  let ax = 0, ay = 0, az = 0;
+  for (let i = Math.max(0, from); i <= Math.min(frames.length - 1, to); i++) {
+    const w = frames[i]?.world;
+    if (!w) continue;
+    const a = up({ x: (w[27].x + w[28].x) / 2, y: (w[27].y + w[28].y) / 2, z: (w[27].z + w[28].z) / 2 });
+    const b = up({ x: (w[11].x + w[12].x) / 2, y: (w[11].y + w[12].y) / 2, z: (w[11].z + w[12].z) / 2 });
+    const d = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    const l = Math.hypot(d.x, d.y, d.z);
+    if (l < 0.3) continue;
+    ax += d.x / l; ay += d.y / l; az += d.z / l;
+  }
+  const l = Math.hypot(ax, ay, az);
+  if (l < 1e-6 || ay <= 0) return I3;
+  const u = { x: ax / l, y: ay / l, z: az / l };
+  // Rotate u onto (0,1,0): axis = u × y, angle = acos(u·y), capped.
+  let k = { x: -u.z, y: 0, z: u.x };
+  const s = Math.hypot(k.x, k.z);
+  if (s < 1e-6) return I3;
+  k = { x: k.x / s, y: 0, z: k.z / s };
+  const ang = Math.min(Math.acos(Math.min(1, u.y)), (30 * Math.PI) / 180);
+  const c = Math.cos(ang), n = Math.sin(ang), t = 1 - c;
+  return [
+    t * k.x * k.x + c, t * k.x * k.y - n * k.z, t * k.x * k.z + n * k.y,
+    t * k.x * k.y + n * k.z, t * k.y * k.y + c, t * k.y * k.z - n * k.x,
+    t * k.x * k.z - n * k.y, t * k.y * k.z + n * k.x, t * k.z * k.z + c,
+  ];
+}
+
+/** Player's spot: about 0.7 m behind the end line, a little to the backhand side, in a ready stance. */
+export const PLAYER_SPOT: Vec3 = { x: 0.2, y: 0, z: TABLE.length / 2 + 0.7 };
+
+const FEET = [27, 28, 29, 30, 31, 32];
+
+/**
+ * The swing direction at contact (the hitting hand's movement over the ground) is where the ball
+ * goes, so it is turned to face the net. The floor is the lowest foot at the start of the stroke.
+ */
+export function strokeSpace(frames: PoseFrame[], stroke: { startFrame: number; endFrame: number; contactFrame: number }, hand: Handedness): StrokeSpace {
+  const { dom } = sides(hand);
+  const c = stroke.contactFrame;
+  const level = levelFor(frames, stroke.startFrame, stroke.endFrame);
+  const a = frames[Math.max(stroke.startFrame, c - 2)]?.world;
+  const b = frames[Math.min(stroke.endFrame, c + 2)]?.world;
+  // Default: swinging away from the camera, as when filmed from behind.
+  let dx = 0, dz = 1;
+  if (a && b) {
+    const A = up(a[dom.wrist], level), B = up(b[dom.wrist], level);
+    const vx = B.x - A.x;
+    // Back in pose axes (z away from the camera) for the yaw below.
+    const vz = -(B.z - A.z);
+    if (Math.hypot(vx, vz) > 0.05) { dx = vx; dz = vz; }
+  }
+  // In scene axes the swing is (dx, −dz); turn it to (0, −1).
+  const yaw = Math.atan2(-dx, dz);
+  const first = frames[stroke.startFrame]?.world ?? frames.find((f) => f.world)?.world;
+  // Floor: the lowest foot at the start, measured along the levelled vertical (as a pose-style "down" value).
+  const floor = first ? Math.max(...FEET.map((i) => -up(first[i], level).y)) : 0.9;
+  return { yaw, floor, origin: PLAYER_SPOT, level };
+}
+
+/** A pose world point in court coordinates. */
+export function toCourt(p: Vec3, s: StrokeSpace): Vec3 {
+  const q = up(p, s.level);
+  const x = q.x;
+  const z = q.z;
+  const c = Math.cos(s.yaw);
+  const n = Math.sin(s.yaw);
+  return { x: s.origin.x + x * c - z * n, y: s.floor + q.y, z: s.origin.z + x * n + z * c };
+}
+
+/** A direction given in pose axes (y down, z away from the camera), turned into court axes. */
+export function dirToCourt(d: Vec3, s: StrokeSpace): Vec3 {
+  const a = toCourt({ x: 0, y: 0, z: 0 }, s);
+  const b = toCourt(d, s);
+  return { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+}
+
+/** Quadratic Bézier point. */
+const bez = (a: Vec3, c: Vec3, b: Vec3, t: number): Vec3 => {
+  const u = 1 - t;
+  return { x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, y: u * u * a.y + 2 * u * t * c.y + t * t * b.y, z: u * u * a.z + 2 * u * t * c.z + t * t * b.z };
+};
+
+export interface BallFlight {
+  contact: Vec3;
+  /** Ball position `t` seconds from contact (negative before), or null when out of the shown flight. */
+  at(t: number): Vec3 | null;
+  /** Seconds the flight is shown before and after contact. */
+  before: number;
+  after: number;
+}
+
+/**
+ * An illustrative ball flight in court coordinates, built around the measured contact point:
+ * the ball arrives (a toss for serves, a bounce for groundstrokes), meets the racket at contact,
+ * and leaves toward the opponent's court. One camera cannot measure the ball's depth, so only
+ * the contact point and the swing direction come from the video.
+ */
+export function ballFlight(frames: PoseFrame[], stroke: { startFrame: number; endFrame: number; contactFrame: number }, s: StrokeSpace, hand: Handedness, serve: boolean): BallFlight | null {
+  const r = estimateRacket(frames[stroke.contactFrame]?.world ?? null, hand);
+  if (!r) return null;
+  const C = toCourt(r.head, s);
+  const before = serve ? 0.9 : 0.55;
+  const after = 0.45;
+  const top = TABLE.height;
+  const land: Vec3 = { x: C.x * 0.3 - 0.2, y: top, z: serve ? -0.45 : -0.95 };
+  const outCtrl: Vec3 = { x: (C.x + land.x) / 2, y: Math.max(C.y, top + 0.2) + (serve ? 0.12 : 0.35), z: (C.z + land.z) / 2 };
+  let incoming: (t: number) => Vec3;
+  if (serve) {
+    const { non } = sides(hand);
+    const release = frames[stroke.startFrame]?.world;
+    const T = release ? toCourt(release[non.wrist], s) : { ...C, y: 1.2 };
+    // The toss: straight up out of the open palm (at least 16 cm) and struck on the way down.
+    const peak: Vec3 = { x: C.x, y: Math.max(T.y, C.y) + 0.35, z: C.z };
+    incoming = (k) => bez(T, { x: (T.x + C.x) / 2, y: peak.y + 0.3, z: (T.z + C.z) / 2 }, C, k);
+  } else {
+    // From the opponent's racket, over the net, one bounce on the player's half, up to contact.
+    const A: Vec3 = { x: -0.3, y: top + 0.25, z: -TABLE.length / 2 - 0.5 };
+    const B: Vec3 = { x: C.x * 0.6, y: top, z: Math.min(TABLE.length / 2 - 0.3, Math.max(0.35, C.z - 0.9)) };
+    incoming = (k) => (k < 0.6 ? bez(A, { x: (A.x + B.x) / 2, y: top + 0.45, z: (A.z + B.z) / 2 }, B, k / 0.6) : bez(B, { x: (B.x + C.x) / 2, y: Math.max(C.y, top) + 0.25, z: (B.z + C.z) / 2 }, C, (k - 0.6) / 0.4));
+  }
+  return {
+    contact: C,
+    before,
+    after,
+    at(t) {
+      if (t < -before || t > after) return null;
+      return t <= 0 ? incoming(1 + t / before) : bez(C, outCtrl, land, t / after);
+    },
+  };
+}

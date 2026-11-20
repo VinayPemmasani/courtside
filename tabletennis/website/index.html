@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spinwise</title>
+<meta name="description" content="Table tennis stroke analysis: film a loop, push or serve and see each phase, the numbers and the drill that fixes it.">
+<link rel="icon" href="img/icon.svg">
+<style>
+:root { --bg:#060b16; --surface:#0c1424; --line:#1c2a44; --text:#e8eefc; --muted:#8fa0c2; --accent:#ff7a1a; --cyan:#3fb6ff; }
+* { box-sizing: border-box; }
+body { margin:0; background: radial-gradient(1200px 600px at 80% -10%, #12305e55, transparent), var(--bg); color: var(--text); font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--accent); }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+header { display:flex; align-items:center; gap:12px; padding:20px 0; }
+header img { width:36px; height:36px; }
+header b { letter-spacing:.12em; }
+header span { color: var(--muted); letter-spacing:.12em; font-size:13px; }
+.hero { display:grid; grid-template-columns: 1.1fr 1fr; gap:40px; align-items:center; padding:40px 0 60px; }
+h1 { font-size: clamp(34px, 5vw, 56px); line-height:1.05; margin:0 0 16px; }
+h1 em { color: var(--accent); font-style: normal; }
+h2 { font-size: 30px; margin: 0 0 12px; }
+p.lead { color: var(--muted); font-size: 18px; }
+.btn { display:inline-block; background: var(--accent); color:#111; font-weight:700; padding:12px 22px; border-radius:9px; text-decoration:none; margin-top:12px; }
+.shot { width:100%; border-radius:12px; border:1px solid var(--line); display:block; }
+section { padding: 56px 0; border-top: 1px solid var(--line); }
+.grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 24px; }
+.card { background: var(--surface); border:1px solid var(--line); border-radius:12px; padding:20px; }
+.card h3 { margin: 0 0 6px; font-size: 17px; color: var(--cyan); }
+.card p { margin:0; color: var(--muted); font-size: 15px; }
+.two { display:grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items:center; }
+.phases { display:flex; flex-wrap:wrap; gap:8px; margin: 14px 0; }
+.phases span { border:1px solid var(--line); border-radius:999px; padding:4px 12px; font-size:14px; }
+.phases span b { color: var(--accent); margin-right:6px; }
+details { background: var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px 18px; margin: 10px 0; }
+summary { cursor:pointer; font-weight:600; }
+details p { color: var(--muted); margin: 10px 0 0; }
+footer { padding: 30px 0 50px; color: var(--muted); font-size: 14px; border-top:1px solid var(--line); }
+@media (max-width: 800px) { .hero, .two { grid-template-columns: 1fr; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><img src="img/icon.svg" alt=""><b>SPINWISE</b><span>/ TABLE TENNIS LAB</span></header>
+
+  <div class="hero">
+    <div>
+      <h1>Film the loop. <em>See the fix.</em></h1>
+      <p class="lead">Spinwise finds every stroke in a table tennis video, splits it into phases, measures the body and tells you the one thing to change, with the drill that changes it.</p>
+      <a class="btn" href="#start">Get Spinwise</a>
+    </div>
+    <img class="shot" src="img/studio-drill.jpg" alt="3D athlete playing a forehand loop beside a table">
+  </div>
+
+  <section>
+    <h2>A coach's eye on every stroke</h2>
+    <p class="lead">Forehand and backhand loops, pushes, flicks, blocks and serves are found and labelled on their own.</p>
+    <div class="grid">
+      <div class="card"><h3>Phases and numbers</h3><p>Waist turn, knee bend, elbow, contact in front of the body, the finish and serve toss height, measured in 3D at each phase.</p></div>
+      <div class="card"><h3>3D breakdown</h3><p>A clay athlete beside a regulation table replays the stroke step by step, with the bat path and weight transfer.</p></div>
+      <div class="card"><h3>Drills that fix it</h3><p>Each key point links to shadow play, multiball, Falkenberg or serve drills, plus exercises away from the table.</p></div>
+      <div class="card"><h3>Table placement</h3><p>Tap the table corners once, then each bounce: on or off with the margin, short, mid or long, and ball speed.</p></div>
+      <div class="card"><h3>Progress</h3><p>Compare two strokes lined up at contact and follow each player across drill, robot, multiball and match sessions.</p></div>
+      <div class="card"><h3>Private</h3><p>Everything runs on your laptop. Videos and players never leave the device.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="two">
+      <div>
+        <h2>Every stroke, step by step</h2>
+        <div class="phases"><span><b>1</b>Ready</span><span><b>2</b>Turn</span><span><b>3</b>Backswing</span><span><b>4</b>Low Point</span><span><b>5</b>Contact</span><span><b>6</b>Finish</span></div>
+        <p class="lead">Serves use the Toss instead of the Turn. Pushes, flicks and blocks get a short four-phase breakdown, because they are compact strokes.</p>
+      </div>
+      <img class="shot" src="img/breakdown.jpg" alt="Contact step of a forehand loop breakdown" style="max-height:520px; object-fit:cover">
+    </div>
+  </section>
+
+  <section>
+    <h2>Filming in two minutes</h2>
+    <p class="lead">Phone on a tripod behind your end of the table or side-on, whole body in the picture, 120 fps if the phone allows. Spinwise scores each clip and says what to change next time.</p>
+    <img class="shot" src="img/app.png" alt="Spinwise player screen" style="margin-top:20px">
+  </section>
+
+  <section id="start">
+    <h2>Questions</h2>
+    <details><summary>Does it track the ball?</summary><p>Not yet. Strokes come from the body's movement; bounces for placement are tapped by the coach.</p></details>
+    <details><summary>Which strokes does it know?</summary><p>Forehand loop, backhand loop, push, flick, block and serve. Anything mislabelled can be re-labelled in one click.</p></details>
+    <details><summary>Is my video uploaded?</summary><p>No. Analysis runs on your computer or in your browser tab.</p></details>
+    <details><summary>Is it finished?</summary><p>This is an early version. The targets are starting points that a coach can tune in Coach settings.</p></details>
+  </section>
+
+  <footer>Spinwise · table tennis stroke analysis · free during early access</footer>
+</div>
+</body>
+</html>

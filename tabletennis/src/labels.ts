@@ -1,0 +1,28 @@
+import type { StrokeType } from './core';
+
+export const STROKE_LABEL: Record<StrokeType, string> = {
+  forehand: 'Forehand loop',
+  backhand: 'Backhand loop',
+  push: 'Push',
+  flick: 'Flick',
+  block: 'Block',
+  serve: 'Serve',
+  unknown: 'Unclassified',
+};
+
+export const STROKE_TYPES: StrokeType[] = ['forehand', 'backhand', 'push', 'flick', 'block', 'serve', 'unknown'];
+
+export const fmtTime = (s: number) => {
+  const m = Math.floor(s / 60);
+  const r = s - m * 60;
+  return `${m}:${r.toFixed(1).padStart(4, '0')}`;
+};
+
+/** Video timestamp to the hundredth of a second ("0:04.27"), precise enough to check a single phase frame. */
+export const fmtStamp = (s: number) => {
+  const m = Math.floor(s / 60);
+  const r = s - m * 60;
+  return `${m}:${r.toFixed(2).padStart(5, '0')}`;
+};
+
+export const fmtDate = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
