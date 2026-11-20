@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vidrio · Padel stroke analysis</title>
+<meta name="description" content="Vidrio turns a phone video of your padel into stroke-by-stroke feedback: bandeja, víbora, smash, serve, volleys and play off the glass." />
+<meta name="theme-color" content="#04111f" />
+<link rel="icon" href="img/icon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+:root{--bg:#04111f;--panel:#081a2c;--line:#143049;--text:#e3f1fb;--muted:#6f8ca5;--lime:#d7ff3a;--glass:#5fd4ff;--good:#3ee6a8}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,rgba(95,212,255,.14),transparent 60%),var(--bg);color:var(--text);font:15px/1.6 'JetBrains Mono',ui-monospace,Menlo,monospace}
+a{color:var(--lime)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+header{display:flex;align-items:center;justify-content:space-between;padding:20px 0}
+.brand{display:flex;gap:10px;align-items:center;letter-spacing:.2em;font-weight:600}
+.brand img{width:32px;height:32px}
+.brand em{color:var(--muted);font-style:normal}
+.btn{display:inline-block;padding:12px 20px;border:1px solid var(--lime);color:var(--lime);text-decoration:none;text-transform:uppercase;letter-spacing:.12em;font-size:13px}
+.btn.solid{background:var(--lime);color:#0b1400;font-weight:600}
+h1{font-family:Anton,Impact,sans-serif;font-weight:400;font-size:clamp(44px,8vw,92px);line-height:.95;margin:48px 0 16px;text-transform:uppercase}
+h1 span{color:var(--lime)}
+h2{font-family:Anton,Impact,sans-serif;font-weight:400;font-size:clamp(28px,4vw,44px);text-transform:uppercase;margin:0 0 12px}
+.lead{max-width:640px;color:#b9cfe0;font-size:16px}
+.cta{display:flex;gap:12px;flex-wrap:wrap;margin:28px 0 40px}
+.shot{border:1px solid var(--line);display:block;width:100%;height:auto;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+section{padding:64px 0;border-top:1px solid var(--line)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);padding:18px}
+.card b{display:block;color:var(--lime);text-transform:uppercase;letter-spacing:.1em;font-size:13px;margin-bottom:6px}
+.card p{margin:0;color:#b9cfe0;font-size:14px}
+.split{display:grid;grid-template-columns:1fr 1.3fr;gap:32px;align-items:center}
+@media (max-width:820px){.split{grid-template-columns:1fr}}
+.tags{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.tags span{border:1px solid var(--glass);color:var(--glass);padding:4px 10px;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+ol{padding-left:20px;color:#b9cfe0}
+footer{padding:40px 0;color:var(--muted);font-size:13px;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><img src="img/icon.svg" alt="" /> VIDRIO <em>/ PADEL TELEMETRY</em></div>
+    <a class="btn" href="app/">Open the app</a>
+  </header>
+
+  <h1>Film one rally.<br /><span>Fix the stroke</span> that loses points.</h1>
+  <p class="lead">Vidrio tracks the body in a phone video of your padel, finds every shot, names it (bandeja, víbora, smash, serve, volley, off the glass) and tells you the one change that matters, with drills to fix it.</p>
+  <div class="cta">
+    <a class="btn solid" href="app/">Try it in the browser</a>
+    <a class="btn" href="#how">How it works</a>
+  </div>
+  <img class="shot" src="img/bandeja.jpg" alt="Vidrio drills screen: a 3D player hitting a bandeja inside a glass-walled padel court" />
+</div>
+
+<section id="how"><div class="wrap">
+  <h2>Built for padel, not borrowed from tennis</h2>
+  <p class="lead">Padel swings are shorter, the ball is slower and half the game happens off the glass. Every rule, phase and drill in Vidrio is set for that.</p>
+  <div class="tags"><span>Bandeja</span><span>Víbora</span><span>Smash</span><span>Underhand serve</span><span>Off the back glass</span><span>Lob</span><span>Volley</span><span>Forehand</span><span>Backhand</span></div>
+  <div class="grid">
+    <div class="card"><b>Shot by shot</b><p>Each stroke is split into numbered phases (Ready, Turn, Paddle up, Contact, Finish) with the frame and time of each.</p></div>
+    <div class="card"><b>Overheads read apart</b><p>Bandeja, víbora and smash are told apart by contact height, arm extension and how far the paddle cuts across the body.</p></div>
+    <div class="card"><b>Legal serve check</b><p>Contact at or below the waist, after a bounce, with the paddle finishing toward the target.</p></div>
+    <div class="card"><b>Off the glass</b><p>Turn early, let the ball come off the back wall, get low and hit it in front. Vidrio checks each step.</p></div>
+    <div class="card"><b>Coach settings</b><p>Every target range and callout is editable, so the feedback matches how you coach.</p></div>
+    <div class="card"><b>Line calls</b><p>Tap the four corners of the court once and Vidrio calls every bounce against the walls and service boxes.</p></div>
+  </div>
+</div></section>
+
+<section><div class="wrap split">
+  <div>
+    <h2>3D studio on a glass court</h2>
+    <p class="lead">See your stroke rebuilt as a 3D athlete with a real padel paddle, inside a 10 × 20 m court with glass walls and mesh. Orbit around it, slow it down, and export a vertical reel for your players.</p>
+  </div>
+  <img class="shot" src="img/drills.jpg" alt="3D athlete turning for a forehand on a blue padel court" />
+</div></section>
+
+<section><div class="wrap split">
+  <img class="shot" src="img/strike.jpg" alt="Strike lab: paddle face, swing path and ball flight over the 0.88 m net" />
+  <div>
+    <h2>Strike lab</h2>
+    <p class="lead">How squarely and how hard the paddle meets the ball: face angle against the bounce, drive against lift, and where the ball lands short of the back glass.</p>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Three steps</h2>
+  <ol>
+    <li>Prop a phone behind the back glass or at the side, and film a few minutes of play.</li>
+    <li>Import the clip. Vidrio finds each shot and reads it on your device; nothing is uploaded.</li>
+    <li>Open the fix it found and run the drills: on court, off court and everyday cross-training.</li>
+  </ol>
+  <div class="cta"><a class="btn solid" href="app/">Open Vidrio</a></div>
+</div></section>
+
+<footer><div class="wrap">Vidrio · padel stroke analysis for players and coaches. Pose tracking runs in your browser.</div></footer>
+</body>
+</html>
